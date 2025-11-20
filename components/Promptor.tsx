@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { refinePrompt } from '../services/geminiService';
 import { Wand2, ArrowRight, Copy, Sparkles } from 'lucide-react';
@@ -28,10 +29,10 @@ export const Promptor: React.FC<PromptorProps> = ({ onUsePrompt, contextUser, co
     <div className="bg-gray-900 border border-gray-700 rounded-xl p-4 space-y-4">
       <div className="flex items-center gap-2 text-blue-400">
         <Wand2 size={20} />
-        <h3 className="font-bold">The Promptor</h3>
+        <h3 className="font-bold">The Master Promptor</h3>
       </div>
       <p className="text-xs text-gray-400">
-        Write a simple idea (e.g., "eating lunch on mars") and I'll rewrite it for professional results.
+        Convert simple ideas into professional "Master Prompts" with detailed lighting, camera settings, and art direction.
       </p>
       
       <div className="flex gap-2">
@@ -39,7 +40,7 @@ export const Promptor: React.FC<PromptorProps> = ({ onUsePrompt, contextUser, co
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Enter a rough idea..."
+          placeholder="e.g., eating lunch on mars, golden hour"
           className="flex-1 bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-sm text-white focus:ring-1 focus:ring-blue-500 outline-none"
           onKeyDown={(e) => e.key === 'Enter' && handleRefine()}
         />
@@ -50,13 +51,15 @@ export const Promptor: React.FC<PromptorProps> = ({ onUsePrompt, contextUser, co
 
       {refined && (
         <div className="bg-gray-800/50 rounded-lg p-3 animate-fade-in border border-blue-500/30">
-          <p className="text-sm text-gray-200 italic mb-3">"{refined}"</p>
+          <div className="max-h-32 overflow-y-auto custom-scrollbar mb-3">
+             <p className="text-xs text-gray-300 leading-relaxed">"{refined}"</p>
+          </div>
           <Button 
             onClick={() => onUsePrompt(refined)} 
             variant="primary" 
             className="w-full text-xs py-2 h-auto"
           >
-            Use This Prompt
+            Use Master Prompt
           </Button>
         </div>
       )}

@@ -17,7 +17,6 @@ export const Studio: React.FC<StudioProps> = ({ user, products, onUpdateUser, on
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   
-  // Temporary state for adding/editing
   const [editName, setEditName] = useState('');
   const [editImages, setEditImages] = useState<string[]>([]);
   const [editDescription, setEditDescription] = useState('');
@@ -72,9 +71,9 @@ export const Studio: React.FC<StudioProps> = ({ user, products, onUpdateUser, on
     if (!finalDescription) {
       try {
         finalDescription = await analyzeImageForTraining(editImages, type);
-        setEditDescription(finalDescription); // Update local state
+        setEditDescription(finalDescription); 
       } catch (error) {
-        alert("Failed to auto-generate the identity description. Please try again.");
+        alert("Failed to auto-generate the identity description. You can try saving again or write a description manually.");
         setIsSaving(false);
         return;
       }
@@ -153,7 +152,7 @@ export const Studio: React.FC<StudioProps> = ({ user, products, onUpdateUser, on
                   className="text-xs flex items-center gap-1 text-blue-400 hover:text-blue-300 disabled:opacity-50"
                >
                  <Sparkles size={12} />
-                 {isAnalyzing ? 'Analyzing...' : 'Auto-Generate'}
+                 {isAnalyzing ? 'Analyzing...' : 'Regenerate'}
                </button>
              </div>
              

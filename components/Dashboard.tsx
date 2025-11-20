@@ -1,9 +1,10 @@
+
 import React, { useState, useEffect } from 'react';
-import { AppState, GenerationMode, GeneratedImage, EntityProfile } from '../types';
+import { AppState, GenerationMode, GeneratedImage } from '../types';
 import { generateBrandVisual, suggestPrompts } from '../services/geminiService';
 import { Button } from './Button';
 import { Promptor } from './Promptor';
-import { Sparkles, User, Package, Users, Download, ThumbsUp, ThumbsDown, CheckCircle2, Circle } from 'lucide-react';
+import { Sparkles, User, Package, Users, Download, ThumbsUp, ThumbsDown, CheckCircle2, Circle, AlertTriangle, Layers, Maximize2, X } from 'lucide-react';
 
 interface DashboardProps {
   appState: AppState;
@@ -15,22 +16,21 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
   const [mode, setMode] = useState<GenerationMode>(GenerationMode.COMBINED);
   const [prompt, setPrompt] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
-  
-  // Multi-select state for products
+  const [generationProgress, setGenerationProgress] = useState('');
+  const [variationCount, setVariationCount] = useState<number>(1);
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>(
     appState.products.length > 0 ? [appState.products[0].id] : []
   );
-  
   const [showPromptor, setShowPromptor] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>([]);
+  
+  // Lightbox State
+  const [lightboxImage, setLightboxImage] = useState<GeneratedImage | null>(null);
 
   const user = appState.user;
-  
-  // Get full product objects
   const selectedProducts = appState.products.filter(p => selectedProductIds.includes(p.id));
   const primaryProduct = selectedProducts[0] || null;
 
-  // Load suggestions when product selection changes
   useEffect(() => {
     if (user && primaryProduct) {
       suggestPrompts(user.description, primaryProduct.description).then(setSuggestions);
@@ -51,42 +51,56 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
       return;
     }
     
-    // Validation: Must select at least one product if not in USER_ONLY mode
     if (mode !== GenerationMode.USER_ONLY && selectedProducts.length === 0) {
       alert("Please select at least one product for this mode.");
       return;
     }
 
     setIsGenerating(true);
-    try {
-      const url = await generateBrandVisual(
-        prompt, 
-        mode, 
-        user, 
-        selectedProducts, // Pass all selected products
-        appState.likedPrompts
-      );
+    setGenerationProgress(`Initializing...`);
+    
+    let successCount = 0;
+    let errors: string[] = [];
+
+    for (let i = 0; i < variationCount; i++) {
+      setGenerationProgress(`Generating visual ${i + 1}/${variationCount}...`);
       
-      const newImage: GeneratedImage = {
-        id: Date.now().toString(),
-        url,
-        prompt,
-        mode,
-        productId: primaryProduct?.id, // Just track the first one for metadata simplicity
-        timestamp: Date.now()
-      };
-      onImageGenerated(newImage);
-    } catch (error: any) {
-      console.error("Generation failed:", error);
-      // Show detailed error for debugging using error.message
-      const errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
-      alert(`Failed to generate image. \n\nReason: ${errorMessage}`);
-    } finally {
-      setIsGenerating(false);
+      try {
+        const url = await generateBrandVisual(
+          prompt, 
+          mode, 
+          user, 
+          selectedProducts, 
+          appState.likedPrompts
+        );
+        
+        const newImage: GeneratedImage = {
+          id: Date.now().toString() + Math.random().toString().slice(2, 5),
+          url,
+          prompt,
+          mode,
+          productId: primaryProduct?.id, 
+          timestamp: Date.now()
+        };
+        
+        onImageGenerated(newImage);
+        successCount++;
+        
+      } catch (error: any) {
+        console.error(`Variation ${i+1} failed:`, error);
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        errors.push(msg);
+      }
+    }
+
+    setIsGenerating(false);
+    setGenerationProgress('');
+
+    if (successCount === 0 && errors.length > 0) {
+       alert(`Generation failed.\n${errors[0]}`);
     }
   };
 
-  // Get recent images (reverse chronological)
   const recentImages = [...appState.gallery].sort((a, b) => b.timestamp - a.timestamp);
 
   return (
@@ -119,12 +133,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
               ))}
             </div>
 
-            {/* Product Selection (Multi-select) */}
+            {/* Product Selection */}
             {mode !== GenerationMode.USER_ONLY && (
               <div className="space-y-2">
-                <label className="text-xs font-medium text-gray-400 block">
-                  Select Products ({selectedProductIds.length})
-                </label>
+                <div className="flex justify-between items-end">
+                   <label className="text-xs font-medium text-gray-400 block">
+                     Select Products ({selectedProductIds.length})
+                   </label>
+                   <span className="text-[10px] text-gray-600">Max 2 references used</span>
+                </div>
                 {appState.products.length > 0 ? (
                   <div className="max-h-40 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
                     {appState.products.map(p => {
@@ -151,8 +168,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
                     })}
                   </div>
                 ) : (
-                  <div className="text-red-400 text-sm bg-red-900/20 p-2 rounded border border-red-900/50">
-                    No products found. Go to Studio to add one.
+                  <div className="text-red-400 text-sm bg-red-900/20 p-2 rounded border border-red-900/50 flex items-center gap-2">
+                    <AlertTriangle size={14} />
+                    No products. Add one in Studio.
                   </div>
                 )}
               </div>
@@ -184,12 +202,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               placeholder={mode === GenerationMode.COMBINED 
-                ? `Describe ${user?.name || 'the person'} with the products...` 
+                ? `Describe ${user?.name || 'the person'} using the selected products...` 
                 : "Describe the scene, lighting, and mood..."}
               className="w-full bg-gray-900 border border-gray-800 rounded-lg p-3 text-white h-32 resize-none focus:ring-2 focus:ring-blue-500/50 outline-none text-sm"
             />
             
-            {/* Suggestions */}
             {suggestions.length > 0 && (
               <div className="flex flex-wrap gap-2">
                 {suggestions.map((s, i) => (
@@ -204,21 +221,55 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
               </div>
             )}
 
+            {/* Variations Slider */}
+            <div className="bg-gray-900/50 border border-gray-800 rounded-lg p-3">
+              <div className="flex justify-between items-center mb-2">
+                <div className="flex items-center gap-2 text-xs font-medium text-gray-300">
+                  <Layers size={14} className="text-blue-500" />
+                  Variations per batch
+                </div>
+                <span className="text-xs font-bold text-blue-400 bg-blue-900/30 px-2 py-0.5 rounded-full">
+                  {variationCount}
+                </span>
+              </div>
+              <input 
+                type="range" 
+                min="1" 
+                max="10" 
+                value={variationCount}
+                onChange={(e) => setVariationCount(parseInt(e.target.value))}
+                className="w-full h-2 bg-gray-800 rounded-lg appearance-none cursor-pointer accent-blue-500"
+              />
+              <div className="flex justify-between text-[10px] text-gray-600 mt-1 px-1">
+                <span>1</span>
+                <span>5</span>
+                <span>10</span>
+              </div>
+            </div>
+
             <Button 
               onClick={handleGenerate} 
               isLoading={isGenerating} 
               className="w-full" 
               disabled={!prompt.trim() || (mode !== GenerationMode.USER_ONLY && selectedProductIds.length === 0)}
             >
-              <Sparkles size={18} />
-              Generate
+              {isGenerating ? (
+                <span className="flex flex-col items-center leading-tight">
+                  <span>Processing...</span>
+                  <span className="text-[10px] opacity-75 font-normal">{generationProgress}</span>
+                </span>
+              ) : (
+                <>
+                  <Sparkles size={18} />
+                  Generate {variationCount > 1 ? `Batch (${variationCount})` : ''}
+                </>
+              )}
             </Button>
           </div>
 
-          {/* Memory Indicator */}
           {appState.likedPrompts.length > 0 && (
             <div className="p-3 bg-blue-900/10 border border-blue-500/10 rounded-lg text-xs text-blue-300/80">
-              <span className="font-bold">Memory Active:</span> I've learned from {appState.likedPrompts.length} visual styles you liked.
+              <span className="font-bold">Memory Active:</span> I'm using your style preferences from previous likes.
             </div>
           )}
         </div>
@@ -226,10 +277,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
         {/* Right: Gallery Stream */}
         <div className="lg:col-span-2">
            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold">Recent Creations</h2>
+              <h2 className="text-xl font-bold">Local History</h2>
+              <span className="text-xs text-gray-500">{recentImages.length} items stored locally</span>
            </div>
            
-           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
             {recentImages.length === 0 ? (
               <div className="col-span-full flex flex-col items-center justify-center h-64 text-gray-600 border-2 border-dashed border-gray-800 rounded-2xl">
                 <Sparkles size={32} className="mb-3 opacity-50" />
@@ -237,44 +289,99 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
               </div>
             ) : (
               recentImages.map((img) => (
-                <div key={img.id} className="group relative bg-gray-900 rounded-xl overflow-hidden shadow-2xl border border-gray-800 animate-fade-in-up">
+                <div 
+                  key={img.id} 
+                  className="group relative bg-gray-900 rounded-lg overflow-hidden shadow-lg border border-gray-800 hover:border-blue-500/50 transition-all cursor-pointer"
+                  onClick={() => setLightboxImage(img)}
+                >
                   <img src={img.url} alt={img.prompt} className="w-full aspect-square object-cover" />
                   
-                  {/* Overlay Actions */}
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-4">
-                    <p className="text-white text-xs line-clamp-2 mb-3 opacity-90">{img.prompt}</p>
-                    
-                    <div className="flex justify-between items-center">
-                      <div className="flex gap-2">
-                        <button 
-                          onClick={() => onFeedback(img.id, 'like')}
-                          className={`p-2 rounded-full transition-colors ${img.feedback === 'like' ? 'bg-blue-600 text-white' : 'bg-white/10 text-white hover:bg-blue-600'}`}
-                        >
-                          <ThumbsUp size={14} />
-                        </button>
-                        <button 
-                          onClick={() => onFeedback(img.id, 'dislike')}
-                          className={`p-2 rounded-full transition-colors ${img.feedback === 'dislike' ? 'bg-red-600 text-white' : 'bg-white/10 text-white hover:bg-red-600'}`}
-                        >
-                          <ThumbsDown size={14} />
-                        </button>
-                      </div>
-                      
-                      <a 
-                        href={img.url} 
-                        download={`gemini-visual-${img.id}.png`}
-                        className="p-2 bg-white text-black rounded-full hover:scale-110 transition-transform"
-                      >
-                        <Download size={14} />
-                      </a>
-                    </div>
+                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                    <Maximize2 className="text-white" size={24} />
                   </div>
+                  
+                  {img.feedback && (
+                     <div className="absolute top-2 right-2">
+                        {img.feedback === 'like' ? (
+                          <div className="bg-blue-600 p-1 rounded-full shadow-lg"><ThumbsUp size={10} className="text-white" /></div>
+                        ) : (
+                          <div className="bg-red-600 p-1 rounded-full shadow-lg"><ThumbsDown size={10} className="text-white" /></div>
+                        )}
+                     </div>
+                  )}
                 </div>
               ))
             )}
           </div>
         </div>
       </div>
+
+      {/* Lightbox Modal */}
+      {lightboxImage && (
+        <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+          <button 
+            onClick={() => setLightboxImage(null)}
+            className="absolute top-4 right-4 p-2 bg-gray-800 rounded-full text-white hover:bg-gray-700"
+          >
+            <X size={24} />
+          </button>
+
+          <div className="max-w-5xl w-full flex flex-col md:flex-row bg-gray-900 rounded-2xl overflow-hidden border border-gray-800 shadow-2xl max-h-[90vh]">
+            
+            {/* Image Area */}
+            <div className="flex-1 bg-black flex items-center justify-center p-4 relative">
+              <img src={lightboxImage.url} className="max-w-full max-h-[70vh] md:max-h-full object-contain" alt="Generated" />
+            </div>
+
+            {/* Details Sidebar */}
+            <div className="w-full md:w-80 bg-gray-900 p-6 flex flex-col border-l border-gray-800">
+              <h3 className="font-bold text-lg mb-4 text-white">Visual Details</h3>
+              
+              <div className="flex-1 overflow-y-auto custom-scrollbar">
+                <div className="mb-4">
+                   <label className="text-xs font-mono text-gray-500 uppercase">Prompt</label>
+                   <p className="text-sm text-gray-300 leading-relaxed mt-1">{lightboxImage.prompt}</p>
+                </div>
+                
+                <div className="mb-4">
+                   <label className="text-xs font-mono text-gray-500 uppercase">Mode</label>
+                   <p className="text-sm text-blue-400 mt-1">{lightboxImage.mode}</p>
+                </div>
+
+                <div className="mb-4">
+                   <label className="text-xs font-mono text-gray-500 uppercase">Date</label>
+                   <p className="text-sm text-gray-400 mt-1">{new Date(lightboxImage.timestamp).toLocaleString()}</p>
+                </div>
+              </div>
+
+              <div className="mt-6 space-y-3">
+                 <div className="flex gap-2">
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); onFeedback(lightboxImage.id, 'like'); }}
+                      className={`flex-1 py-2 rounded-lg flex items-center justify-center gap-2 transition-colors ${lightboxImage.feedback === 'like' ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}`}
+                    >
+                      <ThumbsUp size={16} /> Like
+                    </button>
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); onFeedback(lightboxImage.id, 'dislike'); }}
+                      className={`flex-1 py-2 rounded-lg flex items-center justify-center gap-2 transition-colors ${lightboxImage.feedback === 'dislike' ? 'bg-red-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}`}
+                    >
+                      <ThumbsDown size={16} /> Dislike
+                    </button>
+                 </div>
+                 
+                 <a 
+                   href={lightboxImage.url}
+                   download={`gemini-visual-${lightboxImage.id}.png`}
+                   className="w-full py-3 bg-white text-black font-bold rounded-lg flex items-center justify-center gap-2 hover:bg-gray-200 transition-colors"
+                 >
+                   <Download size={18} /> Download HD
+                 </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
