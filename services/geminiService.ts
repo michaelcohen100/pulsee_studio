@@ -1,5 +1,4 @@
-
-import { GoogleGenAI, Type, Modality } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 import { EntityProfile, GenerationMode, ExportFormat } from "../types";
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -57,32 +56,92 @@ export const analyzeImageForTraining = async (
 };
 
 /**
+ * Generates a detailed description for an AI Persona based on a short idea.
+ */
+export const generateAIModelDescription = async (idea: string): Promise<string> => {
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: `Create a highly detailed visual description for a photorealistic AI model based on this concept: "${idea}". 
+      Describe face, hair, eyes, skin texture, age, and typical expression. 
+      Format as a dense paragraph suitable for image generation prompting.`,
+    });
+    return response.text || idea;
+  } catch (error) {
+    throw new Error("Impossible de générer la description du personnage.");
+  }
+};
+
+/**
+ * Generates reference images for an AI Persona.
+ */
+export const generateAIModelImages = async (description: string): Promise<string[]> => {
+  const generateOne = async () => {
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-image',
+      contents: {
+        parts: [{ text: `Generate a photorealistic portrait of a person fitting this description: ${description}. White background, studio lighting, neutral expression, looking at camera. High resolution.` }]
+      },
+      config: { imageConfig: { aspectRatio: "1:1" } }
+    });
+    
+    const candidate = response.candidates?.[0];
+    if (candidate?.content?.parts) {
+      for (const part of candidate.content.parts) {
+        if (part.inlineData) {
+          return `data:image/png;base64,${part.inlineData.data}`;
+        }
+      }
+    }
+    throw new Error("No image data returned");
+  };
+
+  // Generate 4 distinct images sequentially or parallel
+  // Parallel is faster but might hit rate limits, let's try parallel with a limit or just 2 for safety, but user asked for full character.
+  // Let's do 2 concurrent batches of 2.
+  try {
+    const p1 = retryOperation(generateOne, 2);
+    const p2 = retryOperation(generateOne, 2);
+    const p3 = retryOperation(generateOne, 2);
+    const p4 = retryOperation(generateOne, 2);
+    
+    return await Promise.all([p1, p2, p3, p4]);
+  } catch (e) {
+    console.error("Failed to generate AI model images", e);
+    throw new Error("Erreur lors de la création des photos du modèle IA.");
+  }
+};
+
+
+/**
  * Generates a new image based on profiles and user prompt.
  */
 export const generateBrandVisual = async (
   userPrompt: string,
   mode: GenerationMode,
-  user: EntityProfile | null,
+  person: EntityProfile | null, // Replaces 'user'
   products: EntityProfile[], 
   likedPrompts: string[] = []
 ): Promise<string> => {
   
+  if (!process.env.API_KEY) throw new Error("API Key manquant (Check .env)");
+
   const performGeneration = async () => {
     const imageParts: any[] = [];
     let promptBuilder = "";
 
     // 1. Image Payload Construction (Max 3 images strictly)
-    // Priority: User (1) -> Products (up to 2)
+    // Priority: Person (1) -> Products (up to 2)
     
-    if ((mode === GenerationMode.USER_ONLY || mode === GenerationMode.COMBINED) && user && user.images.length > 0) {
-      const rawUser = user.images[0];
-      const base64User = rawUser.includes(',') ? rawUser.split(',')[1] : rawUser;
+    if ((mode === GenerationMode.USER_ONLY || mode === GenerationMode.COMBINED) && person && person.images.length > 0) {
+      const rawPerson = person.images[0];
+      const base64Person = rawPerson.includes(',') ? rawPerson.split(',')[1] : rawPerson;
       
-      if (base64User) {
+      if (base64Person) {
         imageParts.push({
           inlineData: {
             mimeType: 'image/jpeg',
-            data: base64User
+            data: base64Person
           }
         });
         promptBuilder += `Reference Image 1: Main Subject (Person). `;
@@ -90,7 +149,7 @@ export const generateBrandVisual = async (
     }
 
     if ((mode === GenerationMode.PRODUCT_ONLY || mode === GenerationMode.COMBINED) && products.length > 0) {
-      // Limit total images to 3. If we have user, we can take 2 products. If no user, 3 products.
+      // Limit total images to 3. If we have person, we can take 2 products. If no person, 3 products.
       const maxProducts = imageParts.length > 0 ? 2 : 3;
       const activeProducts = products.slice(0, maxProducts);
       
@@ -182,6 +241,8 @@ export const editGeneratedVisual = async (
   instruction: string
 ): Promise<string> => {
   
+  if (!process.env.API_KEY) throw new Error("API Key manquant");
+
   const performEdit = async () => {
     const base64Data = originalImageUrl.includes(',') ? originalImageUrl.split(',')[1] : originalImageUrl;
     
@@ -224,6 +285,8 @@ export const expandImageForFormat = async (
   format: ExportFormat
 ): Promise<string> => {
   
+  if (!process.env.API_KEY) throw new Error("API Key manquant");
+
   const performExpansion = async () => {
     const base64Data = originalImageUrl.includes(',') ? originalImageUrl.split(',')[1] : originalImageUrl;
     

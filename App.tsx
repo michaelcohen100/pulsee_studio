@@ -1,14 +1,16 @@
+
 import React, { useState, useEffect } from 'react';
 import { Studio } from './components/Studio';
 import { Dashboard } from './components/Dashboard';
 import { TrainingWizard } from './components/TrainingWizard';
+import { AICharacterCreator } from './components/AICharacterCreator';
 import { AppStep, AppState, EntityProfile, GeneratedImage, TrainingData } from './types';
 import { Sparkles, LayoutDashboard, Settings } from 'lucide-react';
 import { db } from './utils/db';
 
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>({
-    user: null,
+    people: [],
     products: [],
     gallery: [],
     likedPrompts: []
@@ -23,17 +25,17 @@ const App: React.FC = () => {
         const profiles = await db.getProfiles();
         const gallery = await db.getGallery();
         
-        const user = profiles.find((p: any) => p.type === 'PERSON') || null;
+        const people = profiles.filter((p: any) => p.type === 'PERSON');
         const products = profiles.filter((p: any) => p.type === 'PRODUCT');
 
         setState({
-          user,
+          people,
           products,
           gallery,
           likedPrompts: [] // In a full app, store this in DB too
         });
         
-        if (!user) {
+        if (people.length === 0) {
           setView(AppStep.ONBOARDING);
         }
       } catch (e) {
@@ -69,30 +71,62 @@ const App: React.FC = () => {
 
     setState(prev => ({
       ...prev,
-      user: userProfile,
+      people: [...prev.people, userProfile],
       products: [...prev.products, productProfile]
     }));
     setView(AppStep.DASHBOARD);
   };
 
-  const handleUpdateUser = async (user: EntityProfile) => {
-    await db.saveProfile(user);
-    setState(prev => ({ ...prev, user }));
+  const handleUpdatePeople = async (people: EntityProfile[]) => {
+    // Only way to sync bulk update to DB is individually or clear & re-add, but here we usually update one.
+    // For simplicity, we loop save.
+    for (const p of people) {
+       await db.saveProfile(p);
+    }
+    // Handle deletions if necessary (not handled efficiently here but okay for demo)
+    // To handle deletion efficiently, we'd need to compare previous state, but Studio calls delete explicitly usually
+    // Studio calls onUpdatePeople with the new array. We should probably accept the whole array and logic to DB?
+    // Actually Studio calls deleteEntity which calls onUpdatePeople.
+    // The previous implementation was naive. Let's trust Studio to pass valid array.
+    // However, DB needs to know what to delete. 
+    // Ideally update method should be `saveProfile` and `deleteProfile`.
+    // But for this prop `onUpdatePeople`, let's just update state and DB.
+    // Since we don't track deleted IDs easily here without diffing, 
+    // we assume the DB sync logic inside Studio was calling `deleteProduct`.
+    // Wait, previous Studio implementation had `deleteProduct` which called `onUpdateProducts`.
+    // Here we changed Studio to just pass the new array? No, let's look at Studio again.
+    // Studio calls `deleteEntity` which calls `onUpdatePeople(people.filter(...))`.
+    // So `App` needs to figure out what was deleted to remove from DB?
+    // Or we just re-sync everything? Re-syncing is expensive.
+    // BETTER APPROACH: Add specific handlers or use the previous pattern where Studio handled the logic?
+    // No, App handles logic. 
+    // Let's implement specific add/update/delete handlers or just keep it simple.
+    // For now, simply updating state. The individual save/delete logic should ideally be here.
+    
+    // Quick fix: Sync state. The DB persist happens inside the sub-functions if we moved logic there,
+    // BUT Studio doesn't call DB directly. App does.
+    // Let's rewrite `handleUpdatePeople` to act correctly.
+    // Actually, `Studio` component in previous step called `onUpdateProducts`. 
+    // Let's assume for this refactor that we just update state, and we need to sync DB.
+    // We will save all current profiles. Deleted ones remain in DB in this naive implementation.
+    // To fix: We should check IDs.
+    
+    // For robust implementation in this limited scope:
+    setState(prev => {
+       const deleted = prev.people.filter(p => !people.find(newP => newP.id === p.id));
+       deleted.forEach(d => db.deleteProfile(d.id));
+       people.forEach(p => db.saveProfile(p));
+       return { ...prev, people };
+    });
   };
 
   const handleUpdateProducts = async (products: EntityProfile[]) => {
-    for (const p of products) {
-      await db.saveProfile(p);
-    }
-    setState(prev => ({ ...prev, products }));
-  };
-  
-  const handleDeleteProduct = async (id: string) => {
-     await db.deleteProfile(id);
-     setState(prev => ({
-       ...prev,
-       products: prev.products.filter(p => p.id !== id)
-     }));
+    setState(prev => {
+       const deleted = prev.products.filter(p => !products.find(newP => newP.id === p.id));
+       deleted.forEach(d => db.deleteProfile(d.id));
+       products.forEach(p => db.saveProfile(p));
+       return { ...prev, products };
+    });
   };
 
   const handleImageGenerated = async (img: GeneratedImage) => {
@@ -126,6 +160,15 @@ const App: React.FC = () => {
     }
   };
 
+  const handleSaveAIProfile = async (profile: EntityProfile) => {
+    await db.saveProfile(profile);
+    setState(prev => ({
+      ...prev,
+      people: [...prev.people, profile]
+    }));
+    setView(AppStep.STUDIO);
+  };
+
   if (isLoading) {
     return <div className="min-h-screen bg-black flex items-center justify-center text-white">Chargement de Studio Photo Pulsee...</div>;
   }
@@ -143,6 +186,17 @@ const App: React.FC = () => {
            <TrainingWizard onComplete={handleOnboardingComplete} />
          </div>
       </div>
+    );
+  }
+
+  if (view === AppStep.AI_CREATOR) {
+    return (
+       <div className="min-h-screen bg-black text-white">
+          <AICharacterCreator 
+            onSave={handleSaveAIProfile} 
+            onCancel={() => setView(AppStep.STUDIO)} 
+          />
+       </div>
     );
   }
 
@@ -186,10 +240,11 @@ const App: React.FC = () => {
         )}
         {view === AppStep.STUDIO && (
           <Studio 
-            user={state.user} 
+            people={state.people}
             products={state.products}
-            onUpdateUser={handleUpdateUser}
+            onUpdatePeople={handleUpdatePeople}
             onUpdateProducts={handleUpdateProducts}
+            onOpenAICreator={() => setView(AppStep.AI_CREATOR)}
           />
         )}
       </main>

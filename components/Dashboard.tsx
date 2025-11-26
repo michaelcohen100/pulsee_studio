@@ -1,10 +1,10 @@
 
 import React, { useState, useEffect } from 'react';
-import { AppState, GenerationMode, GeneratedImage, ArtStyle, EditorTab, ExportFormat } from '../types';
+import { AppState, GenerationMode, GeneratedImage, ArtStyle, EditorTab, ExportFormat, EntityProfile } from '../types';
 import { generateBrandVisual, suggestPrompts, editGeneratedVisual, expandImageForFormat } from '../services/geminiService';
 import { Button } from './Button';
 import { Promptor } from './Promptor';
-import { Sparkles, User, Package, Users, Download, ThumbsUp, ThumbsDown, CheckCircle2, Circle, AlertTriangle, Layers, Maximize2, X, Palette, Wand2, SplitSquareHorizontal, Crop, ArrowRight, Check } from 'lucide-react';
+import { Sparkles, User, Package, Users, Download, ThumbsUp, ThumbsDown, CheckCircle2, Circle, AlertTriangle, Layers, Maximize2, X, Palette, Wand2, SplitSquareHorizontal, Crop, ArrowRight, Check, ChevronDown } from 'lucide-react';
 
 // Définition des styles disponibles
 const ART_STYLES: ArtStyle[] = [
@@ -65,9 +65,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationProgress, setGenerationProgress] = useState('');
   const [variationCount, setVariationCount] = useState<number>(1);
-  const [selectedProductIds, setSelectedProductIds] = useState<string[]>(
-    appState.products.length > 0 ? [appState.products[0].id] : []
-  );
+  
+  // Initialize safely
+  const [selectedProductIds, setSelectedProductIds] = useState<string[]>(() => {
+    return (appState.products && appState.products.length > 0) ? [appState.products[0].id] : [];
+  });
+  
+  const [selectedPersonId, setSelectedPersonId] = useState<string>(() => {
+    return (appState.people && appState.people.length > 0) ? appState.people[0].id : '';
+  });
+
   const [showPromptor, setShowPromptor] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   
@@ -84,15 +91,23 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
   const [comparisonIds, setComparisonIds] = useState<string[]>([]);
   const [showComparisonModal, setShowComparisonModal] = useState(false);
 
-  const user = appState.user;
-  const selectedProducts = appState.products.filter(p => selectedProductIds.includes(p.id));
+  // Safe derived state
+  const selectedProducts = (appState.products || []).filter(p => selectedProductIds.includes(p.id));
   const primaryProduct = selectedProducts[0] || null;
+  const activePerson = (appState.people || []).find(p => p.id === selectedPersonId) || null;
 
   useEffect(() => {
-    if (user && primaryProduct) {
-      suggestPrompts(user.description, primaryProduct.description).then(setSuggestions);
+    if (activePerson && primaryProduct) {
+      suggestPrompts(activePerson.description, primaryProduct.description).then(setSuggestions);
     }
-  }, [primaryProduct?.id, user?.id]);
+  }, [primaryProduct?.id, activePerson?.id]);
+  
+  // Auto-select person if none selected but available
+  useEffect(() => {
+    if (!activePerson && appState.people.length > 0) {
+      setSelectedPersonId(appState.people[0].id);
+    }
+  }, [appState.people, activePerson]);
 
   const toggleProduct = (id: string) => {
     setSelectedProductIds(prev => 
@@ -127,6 +142,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
       return;
     }
 
+    if (mode !== GenerationMode.PRODUCT_ONLY && !activePerson) {
+      alert("Veuillez sélectionner une personne ou un mannequin pour ce mode.");
+      return;
+    }
+
     setIsGenerating(true);
     setGenerationProgress(`Initialisation...`);
     
@@ -143,7 +163,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
         const url = await generateBrandVisual(
           finalPrompt, 
           mode, 
-          user, 
+          activePerson, 
           selectedProducts, 
           appState.likedPrompts
         );
@@ -154,6 +174,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
           prompt: finalPrompt,
           mode,
           productId: primaryProduct?.id, 
+          personId: activePerson?.id,
           styleId: selectedStyle.id,
           timestamp: Date.now()
         };
@@ -223,7 +244,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
     }
   };
 
-  const recentImages = [...appState.gallery].sort((a, b) => b.timestamp - a.timestamp);
+  const recentImages = [...(appState.gallery || [])].sort((a, b) => b.timestamp - a.timestamp);
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-6xl">
@@ -236,7 +257,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 space-y-4">
              <div className="grid grid-cols-3 gap-1 bg-gray-950 p-1 rounded-lg">
               {[
-                { id: GenerationMode.USER_ONLY, icon: User, label: 'Moi' },
+                { id: GenerationMode.USER_ONLY, icon: User, label: 'Personne' },
                 { id: GenerationMode.COMBINED, icon: Users, label: 'Combiné' },
                 { id: GenerationMode.PRODUCT_ONLY, icon: Package, label: 'Produit' }
               ].map((m) => (
@@ -254,6 +275,36 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
                 </button>
               ))}
             </div>
+            
+            {/* Person Selection */}
+            {mode !== GenerationMode.PRODUCT_ONLY && (
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-gray-400 block">
+                  Modèle / Personne
+                </label>
+                {appState.people && appState.people.length > 0 ? (
+                  <div className="relative">
+                    <select 
+                      value={selectedPersonId}
+                      onChange={(e) => setSelectedPersonId(e.target.value)}
+                      className="w-full appearance-none bg-gray-800 border border-gray-700 rounded-lg p-3 text-white text-sm focus:ring-2 focus:ring-blue-500 outline-none pr-10"
+                    >
+                      {appState.people.map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} {p.isAI ? '(IA)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown size={16} className="absolute right-3 top-3 text-gray-400 pointer-events-none" />
+                  </div>
+                ) : (
+                  <div className="text-red-400 text-sm bg-red-900/20 p-2 rounded border border-red-900/50 flex items-center gap-2">
+                    <AlertTriangle size={14} />
+                    Aucun modèle. Ajoutez-en un dans le Studio.
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Product Selection */}
             {mode !== GenerationMode.USER_ONLY && (
@@ -264,7 +315,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
                    </label>
                    <span className="text-[10px] text-gray-600">Max 2 références utilisées</span>
                 </div>
-                {appState.products.length > 0 ? (
+                {(appState.products || []).length > 0 ? (
                   <div className="max-h-40 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
                     {appState.products.map(p => {
                       const isSelected = selectedProductIds.includes(p.id);
@@ -342,7 +393,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
             {showPromptor && (
               <Promptor 
                 onUsePrompt={(p) => { setPrompt(p); setShowPromptor(false); }} 
-                contextUser={user?.name}
+                contextUser={activePerson?.name}
                 contextProduct={primaryProduct?.name}
               />
             )}
@@ -351,7 +402,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               placeholder={mode === GenerationMode.COMBINED 
-                ? `Décrivez ${user?.name || 'la personne'} utilisant les produits sélectionnés...` 
+                ? `Décrivez ${activePerson?.name || 'le modèle'} utilisant les produits sélectionnés...` 
                 : "Décrivez la scène, l'éclairage et l'ambiance..."}
               className="w-full bg-gray-900 border border-gray-800 rounded-lg p-3 text-white h-32 resize-none focus:ring-2 focus:ring-blue-500/50 outline-none text-sm"
             />
