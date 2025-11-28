@@ -4,7 +4,7 @@ import { EntityProfile } from '../types';
 import { ImageUploader } from './ImageUploader';
 import { Button } from './Button';
 import { analyzeImageForTraining } from '../services/geminiService';
-import { Plus, Trash2, Save, RefreshCw, Edit2, Check, Sparkles, User, UserPlus } from 'lucide-react';
+import { Plus, Trash2, Save, RefreshCw, Edit2, Check, Sparkles, User, UserPlus, Ruler, X } from 'lucide-react';
 
 interface StudioProps {
   people: EntityProfile[];
@@ -22,12 +22,14 @@ export const Studio: React.FC<StudioProps> = ({ people, products, onUpdatePeople
   const [editName, setEditName] = useState('');
   const [editImages, setEditImages] = useState<string[]>([]);
   const [editDescription, setEditDescription] = useState('');
+  const [editDimensions, setEditDimensions] = useState('');
 
   const startEdit = (entity: EntityProfile) => {
     setEditingId(entity.id);
     setEditName(entity.name);
     setEditImages(entity.images);
     setEditDescription(entity.description);
+    setEditDimensions(entity.dimensions || '');
   };
 
   const startNewProduct = () => {
@@ -35,6 +37,7 @@ export const Studio: React.FC<StudioProps> = ({ people, products, onUpdatePeople
     setEditName('');
     setEditImages([]);
     setEditDescription('');
+    setEditDimensions('');
   };
 
   const startNewPerson = () => {
@@ -42,6 +45,7 @@ export const Studio: React.FC<StudioProps> = ({ people, products, onUpdatePeople
     setEditName('');
     setEditImages([]);
     setEditDescription('');
+    setEditDimensions('');
   };
 
   const cancelEdit = () => {
@@ -49,6 +53,7 @@ export const Studio: React.FC<StudioProps> = ({ people, products, onUpdatePeople
     setEditName('');
     setEditImages([]);
     setEditDescription('');
+    setEditDimensions('');
   };
 
   const handleAnalyze = async (type: 'PERSON' | 'PRODUCT') => {
@@ -93,6 +98,7 @@ export const Studio: React.FC<StudioProps> = ({ people, products, onUpdatePeople
       name: editName,
       description: finalDescription,
       images: editImages,
+      dimensions: editDimensions,
       type
     };
 
@@ -139,19 +145,32 @@ export const Studio: React.FC<StudioProps> = ({ people, products, onUpdatePeople
           <h2 className="text-xl font-bold text-white">
             {(isNewPerson || isNewProduct) ? `Ajouter ${isPerson ? 'Modèle' : 'Produit'}` : `Modifier ${isPerson ? 'Modèle' : 'Produit'}`}
           </h2>
-          <button onClick={cancelEdit} className="text-gray-400 hover:text-white"><XIcon /></button>
+          <button onClick={cancelEdit} className="text-gray-400 hover:text-white"><X size={24} /></button>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           <div className="space-y-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-400 mb-2">Nom</label>
-              <input
-                value={editName}
-                onChange={(e) => setEditName(e.target.value)}
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:ring-2 focus:ring-blue-500 outline-none"
-                placeholder={isPerson ? "Nom du modèle" : "Nom du Produit"}
-              />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="col-span-1">
+                <label className="block text-sm font-medium text-gray-400 mb-2">Nom</label>
+                <input
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                  placeholder={isPerson ? "Nom du modèle" : "Nom du Produit"}
+                />
+              </div>
+              <div className="col-span-1">
+                 <label className="block text-sm font-medium text-gray-400 mb-2 flex items-center gap-1">
+                   <Ruler size={14} /> {isPerson ? 'Taille' : 'Dimensions'}
+                 </label>
+                 <input
+                  value={editDimensions}
+                  onChange={(e) => setEditDimensions(e.target.value)}
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                  placeholder={isPerson ? "ex: 1m75" : "ex: 10cm x 5cm"}
+                />
+              </div>
             </div>
 
             <ImageUploader
@@ -231,9 +250,12 @@ export const Studio: React.FC<StudioProps> = ({ people, products, onUpdatePeople
           {people.map(person => (
             <div key={person.id} className={`bg-gray-900 border rounded-xl p-4 hover:border-gray-700 transition-colors flex flex-col ${person.isAI ? 'border-purple-900/50 shadow-purple-900/10 shadow-lg' : 'border-gray-800'}`}>
               <div className="flex justify-between items-start mb-3">
-                <div className="flex items-center gap-2">
-                   <h3 className="font-bold text-white">{person.name}</h3>
-                   {person.isAI && <span className="text-[10px] bg-purple-900 text-purple-300 px-1.5 rounded border border-purple-700">IA</span>}
+                <div className="flex flex-col">
+                   <div className="flex items-center gap-2">
+                      <h3 className="font-bold text-white">{person.name}</h3>
+                      {person.isAI && <span className="text-[10px] bg-purple-900 text-purple-300 px-1.5 rounded border border-purple-700">IA</span>}
+                   </div>
+                   {person.dimensions && <span className="text-[10px] text-gray-500 flex items-center gap-1"><Ruler size={10}/> {person.dimensions}</span>}
                 </div>
                 <div className="flex gap-1">
                   <button onClick={() => startEdit(person)} className="p-2 hover:bg-gray-800 rounded text-blue-400">
@@ -279,7 +301,10 @@ export const Studio: React.FC<StudioProps> = ({ people, products, onUpdatePeople
           {products.map(product => (
             <div key={product.id} className="bg-gray-900 border border-gray-800 rounded-xl p-4 hover:border-gray-700 transition-colors flex flex-col">
               <div className="flex justify-between items-start mb-3">
-                <h3 className="font-bold text-white">{product.name}</h3>
+                <div className="flex flex-col">
+                  <h3 className="font-bold text-white">{product.name}</h3>
+                  {product.dimensions && <span className="text-[10px] text-gray-500 flex items-center gap-1"><Ruler size={10}/> {product.dimensions}</span>}
+                </div>
                 <div className="flex gap-1">
                   <button onClick={() => startEdit(product)} className="p-2 hover:bg-gray-800 rounded text-blue-400">
                     <Edit2 size={16} />
@@ -315,10 +340,3 @@ export const Studio: React.FC<StudioProps> = ({ people, products, onUpdatePeople
     </div>
   );
 };
-
-const XIcon = () => (
-  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <line x1="18" y1="6" x2="6" y2="18"></line>
-    <line x1="6" y1="6" x2="18" y2="18"></line>
-  </svg>
-);

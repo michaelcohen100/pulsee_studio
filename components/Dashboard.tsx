@@ -1,10 +1,10 @@
 
 import React, { useState, useEffect } from 'react';
 import { AppState, GenerationMode, GeneratedImage, ArtStyle, EditorTab, ExportFormat, EntityProfile } from '../types';
-import { generateBrandVisual, suggestPrompts, editGeneratedVisual, expandImageForFormat } from '../services/geminiService';
+import { generateBrandVisual, suggestPrompts, editGeneratedVisual, expandImageForFormat, generateAIModelDescription, generateAIModelImages, repairProductIdentity } from '../services/geminiService';
 import { Button } from './Button';
 import { Promptor } from './Promptor';
-import { Sparkles, User, Package, Users, Download, ThumbsUp, ThumbsDown, CheckCircle2, Circle, AlertTriangle, Layers, Maximize2, X, Palette, Wand2, SplitSquareHorizontal, Crop, ArrowRight, Check, ChevronDown } from 'lucide-react';
+import { Sparkles, User, Package, Users, Download, ThumbsUp, ThumbsDown, CheckCircle2, Circle, AlertTriangle, Layers, Maximize2, X, Palette, Wand2, SplitSquareHorizontal, Crop, ArrowRight, Check, ChevronDown, Plus, Wrench } from 'lucide-react';
 
 // Définition des styles disponibles
 const ART_STYLES: ArtStyle[] = [
@@ -56,24 +56,24 @@ interface DashboardProps {
   appState: AppState;
   onImageGenerated: (img: GeneratedImage) => void;
   onFeedback: (id: string, type: 'like' | 'dislike') => void;
+  onQuickAI: (profile: EntityProfile) => void;
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated, onFeedback }) => {
-  const [mode, setMode] = useState<GenerationMode>(GenerationMode.COMBINED);
+export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated, onFeedback, onQuickAI }) => {
   const [prompt, setPrompt] = useState('');
   const [selectedStyle, setSelectedStyle] = useState<ArtStyle>(ART_STYLES[0]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationProgress, setGenerationProgress] = useState('');
   const [variationCount, setVariationCount] = useState<number>(1);
   
-  // Initialize safely
-  const [selectedProductIds, setSelectedProductIds] = useState<string[]>(() => {
-    return (appState.products && appState.products.length > 0) ? [appState.products[0].id] : [];
-  });
-  
-  const [selectedPersonId, setSelectedPersonId] = useState<string>(() => {
-    return (appState.people && appState.people.length > 0) ? appState.people[0].id : '';
-  });
+  // Safe selections (Multi-select)
+  const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
+  const [selectedPersonIds, setSelectedPersonIds] = useState<string[]>([]);
+
+  // Quick AI State
+  const [showQuickAI, setShowQuickAI] = useState(false);
+  const [quickAIInput, setQuickAIInput] = useState('');
+  const [isCreatingQuickAI, setIsCreatingQuickAI] = useState(false);
 
   const [showPromptor, setShowPromptor] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>([]);
@@ -91,10 +91,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
   const [comparisonIds, setComparisonIds] = useState<string[]>([]);
   const [showComparisonModal, setShowComparisonModal] = useState(false);
 
-  // Safe derived state
+  // Derived state
   const selectedProducts = (appState.products || []).filter(p => selectedProductIds.includes(p.id));
+  const selectedPeople = (appState.people || []).filter(p => selectedPersonIds.includes(p.id));
+  
   const primaryProduct = selectedProducts[0] || null;
-  const activePerson = (appState.people || []).find(p => p.id === selectedPersonId) || null;
+  const activePerson = selectedPeople[0] || null;
+
+  // Determine implicit mode for prompt suggestion logic
+  const mode = (selectedPeople.length > 0 && selectedProducts.length > 0) ? GenerationMode.COMBINED 
+               : (selectedPeople.length > 0) ? GenerationMode.USER_ONLY
+               : (selectedProducts.length > 0) ? GenerationMode.PRODUCT_ONLY
+               : GenerationMode.USER_ONLY; // Fallback
 
   useEffect(() => {
     if (activePerson && primaryProduct) {
@@ -102,19 +110,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
     }
   }, [primaryProduct?.id, activePerson?.id]);
   
-  // Auto-select person if none selected but available
-  useEffect(() => {
-    if (!activePerson && appState.people.length > 0) {
-      setSelectedPersonId(appState.people[0].id);
-    }
-  }, [appState.people, activePerson]);
-
   const toggleProduct = (id: string) => {
-    setSelectedProductIds(prev => 
-      prev.includes(id) 
-        ? prev.filter(pid => pid !== id)
-        : [...prev, id]
-    );
+    setSelectedProductIds(prev => prev.includes(id) ? prev.filter(pid => pid !== id) : [...prev, id]);
+  };
+
+  const togglePerson = (id: string) => {
+    setSelectedPersonIds(prev => prev.includes(id) ? prev.filter(pid => pid !== id) : [...prev, id]);
   };
 
   const toggleComparisonSelection = (id: string, e: React.MouseEvent) => {
@@ -131,22 +132,38 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
     }
   };
 
+  const handleQuickAICreation = async () => {
+     if (!quickAIInput.trim()) return;
+     setIsCreatingQuickAI(true);
+     try {
+       const desc = await generateAIModelDescription(quickAIInput);
+       const images = await generateAIModelImages(desc); // Generates 6 images
+       
+       const newProfile: EntityProfile = {
+          id: `quick_ai_${Date.now()}`,
+          name: `IA Aléatoire (${quickAIInput.substring(0, 10)}...)`,
+          description: desc,
+          images: images,
+          type: 'PERSON',
+          isAI: true
+       };
+       onQuickAI(newProfile); // Save to App State / DB
+       setSelectedPersonIds(prev => [...prev, newProfile.id]); // Auto select
+       setShowQuickAI(false);
+       setQuickAIInput('');
+     } catch (e) {
+       alert("Erreur lors de la création rapide.");
+     } finally {
+       setIsCreatingQuickAI(false);
+     }
+  };
+
   const handleGenerate = async () => {
     if (!prompt) {
       alert("Veuillez entrer une description pour le prompt.");
       return;
     }
     
-    if (mode !== GenerationMode.USER_ONLY && selectedProducts.length === 0) {
-      alert("Veuillez sélectionner au moins un produit pour ce mode.");
-      return;
-    }
-
-    if (mode !== GenerationMode.PRODUCT_ONLY && !activePerson) {
-      alert("Veuillez sélectionner une personne ou un mannequin pour ce mode.");
-      return;
-    }
-
     setIsGenerating(true);
     setGenerationProgress(`Initialisation...`);
     
@@ -156,44 +173,50 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
     // Combine user prompt with style modifier
     const finalPrompt = `${prompt}. \n\nSTYLE INSTRUCTIONS: ${selectedStyle.promptModifier}`;
 
-    for (let i = 0; i < variationCount; i++) {
-      setGenerationProgress(`Génération du visuel ${i + 1}/${variationCount}...`);
-      
-      try {
-        const url = await generateBrandVisual(
-          finalPrompt, 
-          mode, 
-          activePerson, 
-          selectedProducts, 
-          appState.likedPrompts
-        );
+    try {
+      for (let i = 0; i < variationCount; i++) {
+        setGenerationProgress(`Génération du visuel ${i + 1}/${variationCount}...`);
         
-        const newImage: GeneratedImage = {
-          id: Date.now().toString() + Math.random().toString().slice(2, 5),
-          url,
-          prompt: finalPrompt,
-          mode,
-          productId: primaryProduct?.id, 
-          personId: activePerson?.id,
-          styleId: selectedStyle.id,
-          timestamp: Date.now()
-        };
-        
-        onImageGenerated(newImage);
-        successCount++;
-        
-      } catch (error: any) {
-        console.error(`Variation ${i+1} failed:`, error);
-        const msg = error instanceof Error ? error.message : "Erreur inconnue";
-        errors.push(msg);
+        try {
+          const url = await generateBrandVisual(
+            finalPrompt, 
+            mode, 
+            selectedPeople, // Pass array
+            selectedProducts, 
+            appState.likedPrompts
+          );
+          
+          const newImage: GeneratedImage = {
+            id: Date.now().toString() + Math.random().toString().slice(2, 5),
+            url,
+            prompt: finalPrompt,
+            mode,
+            productId: primaryProduct?.id, 
+            personId: activePerson?.id,
+            styleId: selectedStyle.id,
+            timestamp: Date.now()
+          };
+          
+          onImageGenerated(newImage);
+          successCount++;
+          
+        } catch (error: any) {
+          console.error(`Variation ${i+1} failed:`, error);
+          const msg = error instanceof Error ? error.message : "Erreur inconnue";
+          errors.push(msg);
+        }
       }
-    }
 
-    setIsGenerating(false);
-    setGenerationProgress('');
-
-    if (successCount === 0 && errors.length > 0) {
-       alert(`La génération a échoué.\n${errors[0]}`);
+      if (successCount === 0 && errors.length > 0) {
+         alert(`La génération a échoué.\n${errors[0]}`);
+      }
+    } catch (criticalError) {
+      alert("Erreur critique lors de la génération. Veuillez recharger la page.");
+    } finally {
+      // CRITICAL: Ensure we reset the state no matter what happens
+      setIsGenerating(false);
+      setGenerationProgress('');
+      setVariationCount(1); // Reset to 1 to avoid accidental massive batches
     }
   };
 
@@ -244,7 +267,49 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
     }
   };
 
+  const handleRepairProduct = async () => {
+    if (!lightboxImage || !lightboxImage.productId) {
+      alert("Aucun produit associé à cette image.");
+      return;
+    }
+    
+    // Find the original product image
+    const product = appState.products.find(p => p.id === lightboxImage.productId);
+    if (!product || product.images.length === 0) {
+      alert("Produit original introuvable ou sans image.");
+      return;
+    }
+    
+    setIsProcessingEdit(true);
+    try {
+      const originalProductUrl = product.images[0];
+      const newUrl = await repairProductIdentity(lightboxImage.url, originalProductUrl);
+      
+      const newImage: GeneratedImage = {
+        ...lightboxImage,
+        id: Date.now().toString(),
+        url: newUrl,
+        timestamp: Date.now(),
+        prompt: `${lightboxImage.prompt} [Repair]`,
+        parentId: lightboxImage.id
+      };
+      
+      onImageGenerated(newImage);
+      setLightboxImage(newImage);
+      setActiveTab('details');
+    } catch (e: any) {
+      alert(`Erreur de réparation: ${e.message}`);
+    } finally {
+      setIsProcessingEdit(false);
+    }
+  };
+
   const recentImages = [...(appState.gallery || [])].sort((a, b) => b.timestamp - a.timestamp);
+
+  // Helper to get product associated with lightbox image for the repair tab
+  const lightboxProduct = lightboxImage?.productId 
+    ? appState.products.find(p => p.id === lightboxImage.productId) 
+    : null;
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-6xl">
@@ -253,67 +318,93 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
         {/* Left: Controls */}
         <div className="lg:col-span-1 space-y-6">
           
-          {/* Mode Selector */}
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 space-y-4">
-             <div className="grid grid-cols-3 gap-1 bg-gray-950 p-1 rounded-lg">
-              {[
-                { id: GenerationMode.USER_ONLY, icon: User, label: 'Personne' },
-                { id: GenerationMode.COMBINED, icon: Users, label: 'Combiné' },
-                { id: GenerationMode.PRODUCT_ONLY, icon: Package, label: 'Produit' }
-              ].map((m) => (
-                <button
-                  key={m.id}
-                  onClick={() => setMode(m.id)}
-                  className={`flex flex-col items-center gap-1 py-2 rounded-md text-xs font-medium transition-all ${
-                    mode === m.id 
-                      ? 'bg-gray-800 text-blue-400 shadow-sm' 
-                      : 'text-gray-500 hover:text-gray-300'
-                  }`}
-                >
-                  <m.icon size={16} />
-                  {m.label}
-                </button>
-              ))}
-            </div>
-            
+             <div className="flex items-center gap-2 mb-2">
+               <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
+               <h3 className="text-sm font-bold text-gray-300 uppercase">Configuration de la Scène</h3>
+             </div>
+
             {/* Person Selection */}
-            {mode !== GenerationMode.PRODUCT_ONLY && (
-              <div className="space-y-2">
+            <div className="space-y-2">
+              <div className="flex justify-between items-end">
                 <label className="text-xs font-medium text-gray-400 block">
-                  Modèle / Personne
+                  Sujets / Mannequins ({selectedPersonIds.length})
                 </label>
-                {appState.people && appState.people.length > 0 ? (
-                  <div className="relative">
-                    <select 
-                      value={selectedPersonId}
-                      onChange={(e) => setSelectedPersonId(e.target.value)}
-                      className="w-full appearance-none bg-gray-800 border border-gray-700 rounded-lg p-3 text-white text-sm focus:ring-2 focus:ring-blue-500 outline-none pr-10"
-                    >
-                      {appState.people.map(p => (
-                        <option key={p.id} value={p.id}>
-                          {p.name} {p.isAI ? '(IA)' : ''}
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDown size={16} className="absolute right-3 top-3 text-gray-400 pointer-events-none" />
-                  </div>
-                ) : (
-                  <div className="text-red-400 text-sm bg-red-900/20 p-2 rounded border border-red-900/50 flex items-center gap-2">
-                    <AlertTriangle size={14} />
-                    Aucun modèle. Ajoutez-en un dans le Studio.
-                  </div>
-                )}
+                <button 
+                  onClick={() => setShowQuickAI(true)}
+                  className="text-[10px] text-purple-400 hover:text-purple-300 flex items-center gap-1 bg-purple-900/20 px-2 py-1 rounded"
+                >
+                  <Sparkles size={10} /> IA Aléatoire
+                </button>
               </div>
-            )}
+
+              {showQuickAI && (
+                <div className="bg-gray-950 border border-gray-800 p-3 rounded-lg animate-fade-in space-y-2">
+                   <p className="text-[10px] text-gray-400">Décrivez un personnage rapide (ex: Homme roux, lunettes)</p>
+                   <input 
+                     value={quickAIInput}
+                     onChange={(e) => setQuickAIInput(e.target.value)}
+                     className="w-full text-xs bg-gray-900 border border-gray-700 rounded p-2 text-white"
+                     placeholder="Description..."
+                   />
+                   <div className="flex gap-2">
+                     <button onClick={() => setShowQuickAI(false)} className="flex-1 text-xs py-1 bg-gray-800 rounded text-gray-400">Annuler</button>
+                     <button 
+                       onClick={handleQuickAICreation} 
+                       disabled={isCreatingQuickAI || !quickAIInput}
+                       className="flex-1 text-xs py-1 bg-purple-600 rounded text-white flex items-center justify-center gap-1"
+                     >
+                       {isCreatingQuickAI ? '...' : 'Générer'}
+                     </button>
+                   </div>
+                </div>
+              )}
+
+              {(appState.people || []).length > 0 ? (
+                 <div className="max-h-40 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
+                    {appState.people.map(p => {
+                      const isSelected = selectedPersonIds.includes(p.id);
+                      return (
+                        <div 
+                          key={p.id}
+                          onClick={() => togglePerson(p.id)}
+                          className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer border transition-all ${
+                            isSelected 
+                              ? 'bg-purple-900/20 border-purple-500/50' 
+                              : 'bg-gray-800 border-gray-800 hover:border-gray-700'
+                          }`}
+                        >
+                          <div className={`shrink-0 ${isSelected ? 'text-purple-400' : 'text-gray-600'}`}>
+                            {isSelected ? <CheckCircle2 size={16} /> : <Circle size={16} />}
+                          </div>
+                          {p.images.length > 0 ? (
+                            <img src={p.images[0]} alt={p.name} className="w-8 h-8 rounded-full object-cover bg-gray-900" />
+                          ) : (
+                            <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center"><User size={12}/></div>
+                          )}
+                          <div className="flex flex-col">
+                            <span className={`text-sm truncate ${isSelected ? 'text-white' : 'text-gray-400'}`}>
+                              {p.name}
+                            </span>
+                            {p.isAI && <span className="text-[8px] text-purple-400 bg-purple-900/30 px-1 rounded w-fit">IA</span>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                 </div>
+              ) : (
+                <div className="text-gray-500 text-xs italic p-2 border border-gray-800 rounded bg-gray-800/50">
+                   Aucun modèle. Utilisez "IA Aléatoire" ou allez au Studio.
+                </div>
+              )}
+            </div>
 
             {/* Product Selection */}
-            {mode !== GenerationMode.USER_ONLY && (
-              <div className="space-y-2">
-                <div className="flex justify-between items-end">
+            <div className="space-y-2 pt-2 border-t border-gray-800">
+               <div className="flex justify-between items-end">
                    <label className="text-xs font-medium text-gray-400 block">
-                     Sélectionner Produits ({selectedProductIds.length})
+                     Produits ({selectedProductIds.length})
                    </label>
-                   <span className="text-[10px] text-gray-600">Max 2 références utilisées</span>
                 </div>
                 {(appState.products || []).length > 0 ? (
                   <div className="max-h-40 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
@@ -330,9 +421,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
                           }`}
                         >
                           <div className={`shrink-0 ${isSelected ? 'text-blue-400' : 'text-gray-600'}`}>
-                            {isSelected ? <CheckCircle2 size={18} /> : <Circle size={18} />}
+                            {isSelected ? <CheckCircle2 size={16} /> : <Circle size={16} />}
                           </div>
-                          <img src={p.images[0]} alt={p.name} className="w-8 h-8 rounded object-cover bg-gray-900" />
+                          {p.images.length > 0 ? (
+                             <img src={p.images[0]} alt={p.name} className="w-8 h-8 rounded object-cover bg-gray-900" />
+                          ) : (
+                             <div className="w-8 h-8 rounded bg-gray-700 flex items-center justify-center"><Package size={12}/></div>
+                          )}
                           <span className={`text-sm truncate ${isSelected ? 'text-white' : 'text-gray-400'}`}>
                             {p.name}
                           </span>
@@ -341,16 +436,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
                     })}
                   </div>
                 ) : (
-                  <div className="text-red-400 text-sm bg-red-900/20 p-2 rounded border border-red-900/50 flex items-center gap-2">
-                    <AlertTriangle size={14} />
-                    Aucun produit. Ajoutez-en un dans le Studio.
+                  <div className="text-gray-500 text-xs italic p-2 border border-gray-800 rounded bg-gray-800/50">
+                    Aucun produit disponible.
                   </div>
                 )}
-              </div>
-            )}
+            </div>
           </div>
 
-          {/* Style Selector - NEW FEATURE */}
+          {/* Style Selector */}
           <div className="space-y-2">
              <div className="flex items-center gap-2 text-white font-bold">
                 <Palette size={16} className="text-blue-500"/>
@@ -401,26 +494,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
             <textarea
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              placeholder={mode === GenerationMode.COMBINED 
-                ? `Décrivez ${activePerson?.name || 'le modèle'} utilisant les produits sélectionnés...` 
-                : "Décrivez la scène, l'éclairage et l'ambiance..."}
+              placeholder="Décrivez la scène, l'éclairage et l'ambiance..."
               className="w-full bg-gray-900 border border-gray-800 rounded-lg p-3 text-white h-32 resize-none focus:ring-2 focus:ring-blue-500/50 outline-none text-sm"
             />
             
-            {suggestions.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {suggestions.map((s, i) => (
-                  <button 
-                    key={i} 
-                    onClick={() => setPrompt(s)}
-                    className="text-[10px] bg-gray-800 hover:bg-gray-700 text-gray-300 px-2 py-1 rounded-full border border-gray-700 transition-colors truncate max-w-[200px]"
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-            )}
-
             {/* Variations Slider */}
             <div className="bg-gray-900/50 border border-gray-800 rounded-lg p-3">
               <div className="flex justify-between items-center mb-2">
@@ -451,7 +528,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
               onClick={handleGenerate} 
               isLoading={isGenerating} 
               className="w-full" 
-              disabled={!prompt.trim() || (mode !== GenerationMode.USER_ONLY && selectedProductIds.length === 0)}
+              disabled={!prompt.trim()}
             >
               {isGenerating ? (
                 <span className="flex flex-col items-center leading-tight">
@@ -640,6 +717,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
                   <Wand2 size={14} className="inline mr-1"/> Retouche
                 </button>
                 <button 
+                  onClick={() => setActiveTab('repair')}
+                  className={`flex-1 py-4 text-sm font-bold border-b-2 transition-colors ${activeTab === 'repair' ? 'border-red-500 text-red-400' : 'border-transparent text-gray-500 hover:text-white'}`}
+                >
+                  <Wrench size={14} className="inline mr-1"/> Réparer
+                </button>
+                <button 
                   onClick={() => setActiveTab('export')}
                   className={`flex-1 py-4 text-sm font-bold border-b-2 transition-colors ${activeTab === 'export' ? 'border-green-500 text-green-400' : 'border-transparent text-gray-500 hover:text-white'}`}
                 >
@@ -723,6 +806,43 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
                       >
                         <Sparkles size={16} /> Appliquer Retouche
                       </Button>
+                    </div>
+                  </div>
+                )}
+
+                {activeTab === 'repair' && (
+                  <div className="space-y-6 animate-fade-in">
+                    <div className="bg-red-900/20 border border-red-500/20 p-4 rounded-xl">
+                      <h4 className="font-bold text-red-300 mb-2 flex items-center gap-2">
+                        <Wrench size={16} /> Réparation Produit
+                      </h4>
+                      <p className="text-xs text-red-200/70 mb-4">
+                        Cette fonctionnalité réinjecte la photo originale du produit dans l'image générée pour garantir une fidélité parfaite du texte et du logo.
+                      </p>
+
+                      {lightboxProduct ? (
+                        <div className="space-y-4">
+                          <div className="flex items-center gap-2 p-2 bg-gray-800 rounded-lg">
+                            <img src={lightboxProduct.images[0]} className="w-10 h-10 object-cover rounded" />
+                            <div>
+                               <p className="text-xs text-gray-300 font-bold">Source: {lightboxProduct.name}</p>
+                               <p className="text-[10px] text-gray-500">Image originale utilisée pour la réparation</p>
+                            </div>
+                          </div>
+                          
+                          <Button 
+                            onClick={handleRepairProduct} 
+                            disabled={isProcessingEdit}
+                            className="w-full mt-4 bg-red-600 hover:bg-red-500"
+                          >
+                            <Sparkles size={16} /> Restaurer Détails & Texte
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="text-xs text-gray-400 italic text-center p-4 border border-dashed border-gray-700 rounded">
+                          Cette image n'est pas liée à un produit spécifique. Impossible de réparer.
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}

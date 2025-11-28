@@ -14,6 +14,7 @@ export interface EntityProfile {
   images: string[]; // Base64
   type: 'PERSON' | 'PRODUCT';
   isAI?: boolean; // Flag to identify generated personas
+  dimensions?: string; // New field: Height (cm) for people, Dimensions (L x W x H) for products
 }
 
 export interface AppState {
@@ -59,5 +60,5 @@ export interface ArtStyle {
   color: string;
 }
 
-export type EditorTab = 'details' | 'edit' | 'export';
+export type EditorTab = 'details' | 'edit' | 'export' | 'repair';
 export type ExportFormat = '9:16' | '16:9';

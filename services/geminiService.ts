@@ -1,19 +1,50 @@
-import { GoogleGenAI, Type } from "@google/genai";
+
+import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
 import { EntityProfile, GenerationMode, ExportFormat } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Safe API Key access
+const getApiKey = () => {
+  try {
+    return process.env.API_KEY;
+  } catch (e) {
+    return (import.meta as any).env?.VITE_API_KEY; 
+  }
+};
+
+const apiKey = getApiKey();
+const ai = new GoogleGenAI({ apiKey: apiKey || 'dummy' });
 
 /**
- * Helper to retry an async operation.
+ * Wraps a promise with a timeout to prevent infinite hanging.
  */
-async function retryOperation<T>(operation: () => Promise<T>, retries = 3): Promise<T> {
+const callWithTimeout = async <T>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
+  let timeoutHandle: any;
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    timeoutHandle = setTimeout(() => reject(new Error(`Délai dépassé (Timeout ${Math.round(timeoutMs/1000)}s). Le serveur est peut-être saturé.`)), timeoutMs);
+  });
+
+  return Promise.race([
+    promise.then(res => { clearTimeout(timeoutHandle); return res; }),
+    timeoutPromise
+  ]);
+};
+
+/**
+ * Helper to retry an async operation with exponential backoff.
+ */
+async function retryOperation<T>(operation: () => Promise<T>, retries = 3, delay = 5000): Promise<T> {
   try {
     return await operation();
   } catch (error: any) {
+    // Don't retry client errors (4xx) or safety blocks
+    if (error.message.includes("400") || error.message.includes("Sécurité")) {
+       throw error;
+    }
+
     if (retries > 0) {
       console.warn(`Operation failed, retrying... (${retries} attempts left). Error: ${error.message}`);
-      await new Promise(resolve => setTimeout(resolve, 5000)); // Increased wait time
-      return retryOperation(operation, retries - 1);
+      await new Promise(resolve => setTimeout(resolve, delay)); 
+      return retryOperation(operation, retries - 1, delay * 2);
     }
     throw error;
   }
@@ -26,6 +57,8 @@ export const analyzeImageForTraining = async (
   base64Images: string[],
   subjectType: 'PERSON' | 'PRODUCT'
 ): Promise<string> => {
+  if (!apiKey) throw new Error("API Key manquante. Vérifiez votre configuration (.env).");
+  
   try {
     const prompt = subjectType === 'PERSON' 
       ? "You are a casting director. Describe the person in these photos in extreme detail. Focus on facial structure, eye color, hair texture, age, and skin tone. Be objective and precise."
@@ -38,7 +71,7 @@ export const analyzeImageForTraining = async (
       }
     }));
 
-    const response = await ai.models.generateContent({
+    const response = await callWithTimeout<GenerateContentResponse>(ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: {
         parts: [
@@ -46,7 +79,7 @@ export const analyzeImageForTraining = async (
           { text: prompt }
         ]
       }
-    });
+    }), 30000); // 30s timeout for analysis
 
     return response.text || "Pas de description générée.";
   } catch (error) {
@@ -59,11 +92,12 @@ export const analyzeImageForTraining = async (
  * Generates a detailed description for an AI Persona based on a short idea.
  */
 export const generateAIModelDescription = async (idea: string): Promise<string> => {
+  if (!apiKey) throw new Error("API Key manquante.");
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: `Create a highly detailed visual description for a photorealistic AI model based on this concept: "${idea}". 
-      Describe face, hair, eyes, skin texture, age, and typical expression. 
+      Describe face, hair, eyes, skin texture, age, body type and typical expression. 
       Format as a dense paragraph suitable for image generation prompting.`,
     });
     return response.text || idea;
@@ -73,17 +107,33 @@ export const generateAIModelDescription = async (idea: string): Promise<string> 
 };
 
 /**
- * Generates reference images for an AI Persona.
+ * Generates reference images for an AI Persona with specific angles and expressions.
  */
 export const generateAIModelImages = async (description: string): Promise<string[]> => {
-  const generateOne = async () => {
-    const response = await ai.models.generateContent({
+  if (!apiKey) throw new Error("API Key manquante.");
+
+  const masterPrompt = `Generate a photorealistic ID photo of the following character: ${description}. 
+  Shot: Extreme close-up portrait, facing camera directly. Neutral expression. 
+  Lighting: Soft studio lighting, white background. High resolution, 8k.`;
+
+  const generateImage = async (prompt: string, referenceImage?: string): Promise<string> => {
+    const parts: any[] = [];
+    
+    if (referenceImage) {
+      const base64Data = referenceImage.includes(',') ? referenceImage.split(',')[1] : referenceImage;
+      parts.push({
+        inlineData: { mimeType: 'image/png', data: base64Data }
+      });
+      parts.push({ text: `Reference Image: Use this face as the strict identity reference for the character.` });
+    }
+
+    parts.push({ text: prompt });
+
+    const response = await callWithTimeout<GenerateContentResponse>(ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
-      contents: {
-        parts: [{ text: `Generate a photorealistic portrait of a person fitting this description: ${description}. White background, studio lighting, neutral expression, looking at camera. High resolution.` }]
-      },
+      contents: { parts },
       config: { imageConfig: { aspectRatio: "1:1" } }
-    });
+    }), 60000);
     
     const candidate = response.candidates?.[0];
     if (candidate?.content?.parts) {
@@ -96,19 +146,28 @@ export const generateAIModelImages = async (description: string): Promise<string
     throw new Error("No image data returned");
   };
 
-  // Generate 4 distinct images sequentially or parallel
-  // Parallel is faster but might hit rate limits, let's try parallel with a limit or just 2 for safety, but user asked for full character.
-  // Let's do 2 concurrent batches of 2.
   try {
-    const p1 = retryOperation(generateOne, 2);
-    const p2 = retryOperation(generateOne, 2);
-    const p3 = retryOperation(generateOne, 2);
-    const p4 = retryOperation(generateOne, 2);
+    const masterImage = await retryOperation(() => generateImage(masterPrompt), 2);
     
-    return await Promise.all([p1, p2, p3, p4]);
+    const shots = [
+      { label: "Face - Souriant", prompt: `Portrait of the character, smiling warmly. Friendly expression. Maintain exact facial features from reference.` },
+      { label: "Face - Triste", prompt: `Portrait of the character, sad expression, looking down. Maintain exact facial features from reference.` },
+      { label: "Profil", prompt: `Side profile view of the character. Neutral expression. Maintain exact facial features from reference.` },
+      { label: "Plein Pied", prompt: `Full body fashion shot of the character walking. Stylish pose. Maintain body type and features.` },
+      { label: "Plan Américain", prompt: `Waist-up shot of the character, arms crossed, confident. Maintain exact facial features.` }
+    ];
+
+    const otherImagesPromises = shots.map(shot => 
+      retryOperation(() => generateImage(`${shot.prompt} Character Description: ${description}`, masterImage), 2)
+    );
+
+    const otherImages = await Promise.all(otherImagesPromises);
+
+    return [masterImage, ...otherImages];
+
   } catch (e) {
     console.error("Failed to generate AI model images", e);
-    throw new Error("Erreur lors de la création des photos du modèle IA.");
+    throw new Error("Erreur lors de la création de la planche contact du personnage.");
   }
 };
 
@@ -119,82 +178,89 @@ export const generateAIModelImages = async (description: string): Promise<string
 export const generateBrandVisual = async (
   userPrompt: string,
   mode: GenerationMode,
-  person: EntityProfile | null, // Replaces 'user'
+  selectedPeople: EntityProfile[],
   products: EntityProfile[], 
   likedPrompts: string[] = []
 ): Promise<string> => {
   
-  if (!process.env.API_KEY) throw new Error("API Key manquant (Check .env)");
+  if (!apiKey) throw new Error("API Key manquant (Check .env)");
 
   const performGeneration = async () => {
     const imageParts: any[] = [];
     let promptBuilder = "";
+    let scaleInstructions = "";
 
-    // 1. Image Payload Construction (Max 3 images strictly)
-    // Priority: Person (1) -> Products (up to 2)
-    
-    if ((mode === GenerationMode.USER_ONLY || mode === GenerationMode.COMBINED) && person && person.images.length > 0) {
-      const rawPerson = person.images[0];
-      const base64Person = rawPerson.includes(',') ? rawPerson.split(',')[1] : rawPerson;
-      
-      if (base64Person) {
-        imageParts.push({
-          inlineData: {
-            mimeType: 'image/jpeg',
-            data: base64Person
+    // IMPORTANT: Products FIRST for higher fidelity on text/logos
+    const maxTotalImages = 4;
+    let currentImageCount = 0;
+
+    // 1. Process Products (Priority)
+    products.forEach((product, idx) => {
+      if (currentImageCount >= maxTotalImages) return;
+      if (product.images.length > 0) {
+        const rawProd = product.images[0];
+        const base64Prod = rawProd.includes(',') ? rawProd.split(',')[1] : rawProd;
+        if (base64Prod) {
+          imageParts.push({
+            inlineData: { mimeType: 'image/jpeg', data: base64Prod }
+          });
+          promptBuilder += `[Reference Image ${currentImageCount + 1}: PRODUCT (${product.name}) - CRITICAL: KEEP LOGO AND TEXT IDENTICAL]. `;
+          if (product.dimensions) {
+             scaleInstructions += `- PRODUCT "${product.name}" DIMENSIONS: ${product.dimensions}.\n`;
           }
-        });
-        promptBuilder += `Reference Image 1: Main Subject (Person). `;
-      }
-    }
-
-    if ((mode === GenerationMode.PRODUCT_ONLY || mode === GenerationMode.COMBINED) && products.length > 0) {
-      // Limit total images to 3. If we have person, we can take 2 products. If no person, 3 products.
-      const maxProducts = imageParts.length > 0 ? 2 : 3;
-      const activeProducts = products.slice(0, maxProducts);
-      
-      activeProducts.forEach((product, index) => {
-        if (product.images.length > 0) {
-          const rawProd = product.images[0];
-          const base64Prod = rawProd.includes(',') ? rawProd.split(',')[1] : rawProd;
-
-          if (base64Prod) {
-            imageParts.push({
-              inlineData: {
-                mimeType: 'image/jpeg',
-                data: base64Prod
-              }
-            });
-            const imgIndex = imageParts.length; // Current length includes this new one effectively in logic below, but strict index is Length
-            promptBuilder += `Reference Image ${imgIndex}: Product (${product.name}). `;
-          }
+          currentImageCount++;
         }
-      });
-    }
+      }
+    });
 
-    // 2. Prompt Engineering
+    // 2. Process People
+    selectedPeople.forEach((p, idx) => {
+      if (currentImageCount >= maxTotalImages) return;
+      if (p.images.length > 0) {
+        const rawPerson = p.images[0];
+        const base64Person = rawPerson.includes(',') ? rawPerson.split(',')[1] : rawPerson;
+        if (base64Person) {
+          imageParts.push({
+            inlineData: { mimeType: 'image/jpeg', data: base64Person }
+          });
+          promptBuilder += `[Reference Image ${currentImageCount + 1}: SUBJECT PERSON (${p.name})]. `;
+          if (p.dimensions) {
+             scaleInstructions += `- SUBJECT "${p.name}" HEIGHT/SIZE: ${p.dimensions}.\n`;
+          }
+          currentImageCount++;
+        }
+      }
+    });
+
+    // 3. Prompt Engineering
     promptBuilder += `\n\nROLE: Professional Commercial Photographer & Digital Artist.`;
     promptBuilder += `\nTASK: Create a photorealistic image based on the user's request.`;
     promptBuilder += `\nUSER REQUEST (Translate to English internally): "${userPrompt}"`;
     
     if (imageParts.length > 0) {
-      promptBuilder += `\n\nVISUAL INSTRUCTIONS:`;
-      promptBuilder += `\n- Use the provided reference images as the PRIMARY source for the subject's appearance.`;
+      promptBuilder += `\n\nVISUAL INSTRUCTIONS (STRICT):`;
+      promptBuilder += `\n- Use the provided reference images as the PRIMARY source for the subjects/objects.`;
+      promptBuilder += `\n- BRAND INTEGRITY: Ensure the product looks EXACTLY like the reference.`;
+      promptBuilder += `\n- TEXT FIDELITY: Any text or logos on the product labels must be legible, identical to the photo, and accurate. Do not hallucinate new text.`;
       promptBuilder += `\n- Seamlessly blend the subjects into the described environment.`;
-      promptBuilder += `\n- Ensure consistent lighting matches the scene.`;
+      
+      if (scaleInstructions) {
+         promptBuilder += `\n\nSCALE & PROPORTIONS (CRITICAL):`;
+         promptBuilder += `\nYou MUST respect the following real-world dimensions:`;
+         promptBuilder += `\n${scaleInstructions}`;
+         promptBuilder += `\n- Ensure small objects look small in hands, and large objects look large.`;
+      }
+    } else {
+      promptBuilder += `\n\nINSTRUCTIONS: Generate a high quality image based solely on the textual description.`;
     }
 
-    if (likedPrompts.length > 0) {
-       promptBuilder += `\n- STYLE PREFERENCE: High fidelity, sharp focus, ${likedPrompts.length} previous likes suggest a preference for professional lighting.`;
-    }
-
-    // 3. Execution
+    // 4. Execution with TIMEOUT
     const fullParts = [
       ...imageParts,
       { text: promptBuilder }
     ];
 
-    const response = await ai.models.generateContent({
+    const response = await callWithTimeout<GenerateContentResponse>(ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
       contents: {
         parts: fullParts,
@@ -204,13 +270,13 @@ export const generateBrandVisual = async (
           aspectRatio: "1:1"
         }
       }
-    });
+    }), 90000); // 90 seconds max per image
 
     const candidate = response.candidates?.[0];
     
     // Safety Check
     if (candidate?.finishReason && candidate.finishReason !== 'STOP') {
-       throw new Error(`L'IA a bloqué cette demande en raison de : ${candidate.finishReason}. Essayez de supprimer les descripteurs spécifiques de visage ou les actions complexes.`);
+       throw new Error(`Sécurité : L'IA a bloqué l'image (Raison: ${candidate.finishReason}). Simplifiez le prompt ou changez de sujet.`);
     }
 
     if (candidate?.content?.parts) {
@@ -222,47 +288,88 @@ export const generateBrandVisual = async (
       }
     }
     
-    const textPart = candidate?.content?.parts?.find(p => p.text);
-    if (textPart) {
-        throw new Error(`Le modèle a renvoyé du texte au lieu d'une image : ${textPart.text}`);
-    }
-    
-    throw new Error("La génération est terminée mais aucune donnée d'image n'a été renvoyée.");
+    throw new Error("L'API n'a pas retourné d'image valide.");
   };
 
-  return retryOperation(performGeneration, 3);
+  return retryOperation(performGeneration, 2, 5000);
 };
 
 /**
- * MAGIC EDITOR: Modifies an existing image based on instruction.
+ * REPAIR PRODUCT IDENTITY: Composites original product onto generated image.
+ */
+export const repairProductIdentity = async (
+  generatedImageUrl: string,
+  originalProductUrl: string
+): Promise<string> => {
+  if (!apiKey) throw new Error("API Key manquant");
+
+  const performRepair = async () => {
+    const generatedBase64 = generatedImageUrl.includes(',') ? generatedImageUrl.split(',')[1] : generatedImageUrl;
+    const productBase64 = originalProductUrl.includes(',') ? originalProductUrl.split(',')[1] : originalProductUrl;
+
+    const parts = [
+      {
+        inlineData: { mimeType: 'image/png', data: generatedBase64 }
+      },
+      {
+        inlineData: { mimeType: 'image/jpeg', data: productBase64 }
+      },
+      { 
+        text: `ROLE: Expert Photo Retoucher.
+        TASK: Restore the product identity in the first image (Scene) using the second image (Product Reference).
+        INSTRUCTIONS:
+        1. Identify the product in the Scene (Image 1).
+        2. Replace the details, label, text, and logo of the product in the Scene with the exact details from the Product Reference (Image 2).
+        3. Maintain the lighting, perspective, and shadows of the Scene.
+        4. CRITICAL: The text on the product must be 100% readable and identical to the reference. Do not change anything else in the image.` 
+      }
+    ];
+
+    const response = await callWithTimeout<GenerateContentResponse>(ai.models.generateContent({
+      model: 'gemini-2.5-flash-image',
+      contents: { parts },
+      config: { imageConfig: { aspectRatio: "1:1" } }
+    }), 60000);
+
+    const candidate = response.candidates?.[0];
+    if (candidate?.content?.parts) {
+      for (const part of candidate.content.parts) {
+        if (part.inlineData) {
+           return `data:image/png;base64,${part.inlineData.data}`;
+        }
+      }
+    }
+    throw new Error("La réparation a échoué.");
+  };
+
+  return retryOperation(performRepair, 2);
+};
+
+
+/**
+ * MAGIC EDITOR
  */
 export const editGeneratedVisual = async (
   originalImageUrl: string,
   instruction: string
 ): Promise<string> => {
-  
-  if (!process.env.API_KEY) throw new Error("API Key manquant");
+  if (!apiKey) throw new Error("API Key manquant");
 
   const performEdit = async () => {
     const base64Data = originalImageUrl.includes(',') ? originalImageUrl.split(',')[1] : originalImageUrl;
     
     const parts = [
       {
-        inlineData: {
-          mimeType: 'image/png',
-          data: base64Data
-        }
+        inlineData: { mimeType: 'image/png', data: base64Data }
       },
       { text: `ROLE: Expert Photo Retoucher.\nTASK: Edit this image. ${instruction}\nCONSTRAINT: Maintain the identity of the person and the look of the product exactly. Only modify what is requested.` }
     ];
 
-    const response = await ai.models.generateContent({
+    const response = await callWithTimeout<GenerateContentResponse>(ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
       contents: { parts },
-      config: {
-        imageConfig: { aspectRatio: "1:1" }
-      }
-    });
+      config: { imageConfig: { aspectRatio: "1:1" } }
+    }), 60000);
 
     const candidate = response.candidates?.[0];
     if (candidate?.content?.parts) {
@@ -278,35 +385,29 @@ export const editGeneratedVisual = async (
 };
 
 /**
- * EXPORT STUDIO: Expands image to new format (Outpainting).
+ * EXPORT STUDIO
  */
 export const expandImageForFormat = async (
   originalImageUrl: string,
   format: ExportFormat
 ): Promise<string> => {
-  
-  if (!process.env.API_KEY) throw new Error("API Key manquant");
+  if (!apiKey) throw new Error("API Key manquant");
 
   const performExpansion = async () => {
     const base64Data = originalImageUrl.includes(',') ? originalImageUrl.split(',')[1] : originalImageUrl;
     
     const parts = [
       {
-        inlineData: {
-          mimeType: 'image/png',
-          data: base64Data
-        }
+        inlineData: { mimeType: 'image/png', data: base64Data }
       },
       { text: `ROLE: Digital Artist.\nTASK: Expand the canvas of this image to fit a ${format} aspect ratio for social media use.\nINSTRUCTION: Seamlessly extend the background. Do NOT distort or crop the central subject/product. Keep the style consistent.` }
     ];
 
-    const response = await ai.models.generateContent({
+    const response = await callWithTimeout<GenerateContentResponse>(ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
       contents: { parts },
-      config: {
-        imageConfig: { aspectRatio: format }
-      }
-    });
+      config: { imageConfig: { aspectRatio: format } }
+    }), 60000);
 
     const candidate = response.candidates?.[0];
     if (candidate?.content?.parts) {
@@ -321,9 +422,6 @@ export const expandImageForFormat = async (
   return retryOperation(performExpansion, 2);
 };
 
-/**
- * CREATES A MASTER PROMPT
- */
 export const refinePrompt = async (roughIdea: string, context?: string): Promise<string> => {
   try {
     const response = await ai.models.generateContent({
