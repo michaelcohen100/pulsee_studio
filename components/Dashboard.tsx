@@ -19,14 +19,7 @@ const ART_STYLES: ArtStyle[] = [
     color: 'from-gray-700 to-gray-600',
     category: 'studio'
   },
-  {
-    id: 'pulsee_cold',
-    label: 'Pulsee Signature',
-    promptModifier: 'Deep navy blue (#0A1628) dominant color, electric cyan (#00D4FF) accents, cold icy atmosphere evoking polar mint sensation, premium pharmaceutical aesthetic, subtle lightning/energy effects, high contrast, professional.',
-    icon: '❄️',
-    color: 'from-blue-900 to-cyan-600',
-    category: 'brand'
-  },
+  // Removed Pulsee Signature as requested
   {
     id: 'studio',
     label: 'Studio Pro',
@@ -79,7 +72,7 @@ interface DashboardProps {
 export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated, onFeedback, onQuickAI }) => {
   // === FORM STATE ===
   const [prompt, setPrompt] = useState('');
-  const [selectedStyle, setSelectedStyle] = useState<ArtStyle>(ART_STYLES[1]); // Default: Pulsee Signature
+  const [selectedStyle, setSelectedStyle] = useState<ArtStyle>(ART_STYLES[0]); // Default: Naturel
   const [variationCount, setVariationCount] = useState<number>(1);
   const [selectedPersona, setSelectedPersona] = useState<MarketingPersona | null>(null);
   const [isUltraRealistic, setIsUltraRealistic] = useState(false);

@@ -597,6 +597,14 @@ export const generateBrandVisual = async (
       promptBuilder += `COMPOSITION: Centered product composition, commercial advertising style.\n`;
       promptBuilder += `BACKGROUND: Clean, high-quality professional background as described, or studio abstract.\n`;
       promptBuilder += `FOCUS: Sharp focus on the entire product. 100% clarity on labels.\n`;
+      promptBuilder += `FOCUS: Sharp focus on the entire product. 100% clarity on labels.\n`;
+    }
+
+    // MODE PERSONNAGE SEUL (Interdiction de produits)
+    if (selectedPeople.length > 0 && products.length === 0) {
+      promptBuilder += `\nMODE: PORTRAIT / CHARACTER ONLY\n`;
+      promptBuilder += `CRITICAL: The character is NOT holding anything. EMPTY HANDS.\n`;
+      promptBuilder += `NEGATIVE PROMPT: holding bottle, holding product, holding object, perfume bottle, cosmetic container.\n`;
     }
 
     // Apprentissage des préférences
