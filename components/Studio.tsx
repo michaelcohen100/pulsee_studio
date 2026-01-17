@@ -64,8 +64,10 @@ export const Studio: React.FC<StudioProps> = ({ people, products, onUpdatePeople
     try {
       const desc = await analyzeImageForTraining(editImages, type);
       setEditDescription(desc);
-    } catch (error) {
-      alert("L'analyse a échoué. Veuillez réessayer.");
+      setEditDescription(desc);
+    } catch (error: any) {
+      console.error(error);
+      alert(`Erreur d'analyse: ${error.message || "Impossible de contacter l'IA"}`);
     } finally {
       setIsAnalyzing(false);
     }

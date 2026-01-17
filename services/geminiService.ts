@@ -5,11 +5,17 @@ import { descriptionCache } from "../utils/generationQueue";
 // Safe API Key access
 const getApiKey = () => {
   try {
-    return process.env.API_KEY;
+    // Check various common names
+    const env = (import.meta as any).env;
+    return env?.VITE_GEMINI_API_KEY || env?.VITE_GOOGLE_API_KEY || env?.VITE_API_KEY || key_from_process();
   } catch (e) {
-    return (import.meta as any).env?.VITE_API_KEY;
+    return key_from_process();
   }
 };
+
+const key_from_process = () => {
+  try { return process.env.GEMINI_API_KEY || process.env.API_KEY; } catch { return undefined; }
+}
 
 // ============================================
 // PULSEE BRAND CONSTANTS
