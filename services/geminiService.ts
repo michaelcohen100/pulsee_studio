@@ -560,7 +560,12 @@ export const generateBrandVisual = async (
     promptBuilder += `TASK: Create a photorealistic advertising image\n`;
     promptBuilder += `========================================\n\n`;
 
-    promptBuilder += `USER CREATIVE BRIEF:\n"${userPrompt}"\n\n`;
+    // INTELLIGENT CONTEXT INTERPRETATION
+    // Le prompt utilisateur est interprété dans le contexte du style choisi
+    promptBuilder += `CREATIVE DIRECTION:\n`;
+    promptBuilder += `You must interpret the User Request below within the specific context of the chosen Style.\n`;
+    promptBuilder += `Example: If Style is "Travel" and Request turns "First Class", visualize an "Airplane First Class Cabin", not just the words.\n`;
+    promptBuilder += `USER REQUEST: "${userPrompt}"\n\n`;
 
     // Injection des codes Pulsee si activé
     if (injectPulseeBranding && products.some(p =>

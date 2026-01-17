@@ -358,10 +358,11 @@ VISUAL KEYWORDS: ${selectedPersona.visualKeywords.join(', ')}`;
       <div className="lg:hidden mb-4">
         <button
           onClick={() => setShowMobileFilters(!showMobileFilters)}
-          className="w-full flex items-center justify-between bg-gray-900 border border-gray-800 p-3 rounded-lg text-sm font-medium"
+          className={`w-full flex items-center justify-between p-4 rounded-xl font-bold transition-all ${showMobileFilters ? 'bg-gray-800 text-white' : 'bg-gray-900 text-gray-400 border border-gray-800'
+            }`}
         >
-          <span className="flex items-center gap-2"><Settings size={16} className="text-cyan-500" /> Configuration</span>
-          <ChevronDown size={16} className={`transition-transform ${showMobileFilters ? 'rotate-180' : ''}`} />
+          <span className="flex items-center gap-2"><Settings size={18} className="text-cyan-500" /> Paramètres & Modèles</span>
+          <ChevronDown size={18} className={`transition-transform duration-300 ${showMobileFilters ? 'rotate-180' : ''}`} />
         </button>
       </div>
 
@@ -462,29 +463,35 @@ VISUAL KEYWORDS: ${selectedPersona.visualKeywords.join(', ')}`;
                 </div>
               ) : <div className="text-gray-500 text-xs italic p-2 border border-gray-800 rounded bg-gray-800/50 text-center">Aucun produit.</div>}
 
-              {/* PACKSHOT MODE TOGGLE */}
-              {selectedProductIds.length > 0 && (
-                <div className="mt-3 pt-3 border-t border-gray-800">
-                  <div
-                    onClick={() => {
-                      const newValue = !isPackshot;
-                      setIsPackshot(newValue);
-                      if (newValue) setSelectedPersonIds([]); // Clear people if packshot enabled
-                    }}
-                    className={`p-2.5 rounded-lg border cursor-pointer transition-all flex items-center gap-2 ${isPackshot
-                      ? 'bg-blue-900/30 border-blue-500/50'
+              {/* PACKSHOT MODE TOGGLE - ALWAYS VISIBLE */}
+              <div className="mt-3 pt-3 border-t border-gray-800">
+                <div
+                  onClick={() => {
+                    if (selectedProductIds.length === 0) {
+                      showNotification('warning', "Veuillez d'abord sélectionner un produit.");
+                      return;
+                    }
+                    const newValue = !isPackshot;
+                    setIsPackshot(newValue);
+                    if (newValue) setSelectedPersonIds([]); // Clear people if packshot enabled
+                  }}
+                  className={`p-2.5 rounded-lg border cursor-pointer transition-all flex items-center gap-2 ${isPackshot
+                    ? 'bg-blue-900/30 border-blue-500/50'
+                    : selectedProductIds.length === 0
+                      ? 'bg-gray-800/30 border-gray-800 opacity-50 cursor-not-allowed'
                       : 'bg-gray-800/50 border-gray-800 hover:border-gray-700'
-                      }`}
-                  >
-                    <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${isPackshot ? 'border-blue-500 bg-blue-500' : 'border-gray-500'}`}>
-                      {isPackshot && <Check size={10} className="text-black" />}
-                    </div>
-                    <span className={`text-sm font-medium flex-1 ${isPackshot ? 'text-blue-200' : 'text-gray-400'}`}>Mode Packshot (Produit Seul)</span>
-                    <Package size={14} className={isPackshot ? 'text-blue-400' : 'text-gray-600'} />
+                    }`}
+                >
+                  <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${isPackshot ? 'border-blue-500 bg-blue-500' : 'border-gray-500'}`}>
+                    {isPackshot && <Check size={10} className="text-black" />}
                   </div>
-                  {isPackshot && <p className="text-[10px] text-gray-500 mt-1 pl-1">Photo produit studio, sans personnage.</p>}
+                  <div className="flex-1">
+                    <span className={`text-sm font-medium ${isPackshot ? 'text-blue-200' : 'text-gray-400'}`}>Mode Packshot</span>
+                    <p className="text-[10px] text-gray-500 leading-tight">Produit seul, sans personnage.</p>
+                  </div>
+                  <Package size={14} className={isPackshot ? 'text-blue-400' : 'text-gray-600'} />
                 </div>
-              )}
+              </div>
             </div>
           </div>
         </div>   {/* PERSONA SELECTOR */}
