@@ -611,145 +611,145 @@ VISUAL KEYWORDS: ${selectedPersona.visualKeywords.join(', ')}`;
           )}
         </div>
       </div>
-    </div>
 
-      {/* COMPARISON MODAL */ }
-  {
-    showComparisonModal && comparisonIds.length === 2 && (
-      <div className="fixed inset-0 z-[100] bg-black/95 flex flex-col p-4 animate-fade-in">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-bold text-white flex items-center gap-2"><SplitSquareHorizontal className="text-cyan-500" />Comparateur</h2>
-          <button onClick={() => setShowComparisonModal(false)} className="p-2 bg-gray-800 rounded-full hover:bg-gray-700"><X size={20} /></button>
-        </div>
-        <div className="flex-1 grid grid-cols-2 gap-4 overflow-hidden">
-          {comparisonIds.map((id, idx) => {
-            const img = recentImages.find(i => i.id === id);
-            if (!img) return null;
-            return (
-              <div key={id} className="flex flex-col h-full bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
-                <div className="flex-1 relative"><img src={img.url} className="w-full h-full object-contain bg-black" /><div className="absolute top-4 left-4 bg-black/70 px-3 py-1 rounded-full font-bold">{idx === 0 ? 'A' : 'B'}</div></div>
-                <div className="p-4 border-t border-gray-800 flex justify-between items-center">
-                  <p className="text-xs text-gray-400 truncate flex-1">{new Date(img.timestamp).toLocaleDateString()}</p>
-                  <div className="flex gap-2">
-                    <button onClick={() => onFeedback(img.id, 'like')} className={`p-2 rounded-lg ${img.feedback === 'like' ? 'bg-green-600' : 'bg-gray-800 hover:bg-gray-700'}`}><ThumbsUp size={18} /></button>
-                    <a href={img.url} download className="p-2 bg-gray-800 rounded-lg hover:bg-gray-700"><Download size={18} /></a>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    )
-  }
 
-  {/* LIGHTBOX */ }
-  {
-    lightboxImage && (
-      <div className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4 animate-fade-in">
-        <button onClick={() => { setLightboxImage(null); setActiveTab('details'); setEditInstruction(''); }} className="absolute top-4 right-4 p-2 bg-gray-800 rounded-full text-white hover:bg-gray-700 z-10"><X size={24} /></button>
-
-        <div className="max-w-6xl w-full flex flex-col md:flex-row bg-gray-900 rounded-2xl overflow-hidden border border-gray-800 shadow-2xl h-[85vh]">
-          <div className="flex-1 bg-black flex items-center justify-center p-4 relative">
-            <img src={lightboxImage.url} className="max-w-full max-h-full object-contain shadow-2xl rounded-lg" />
-            {isProcessingEdit && (
-              <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center z-20">
-                <Sparkles className="animate-spin text-cyan-500 mb-4" size={48} /><p className="text-xl font-bold">L'IA travaille...</p>
-              </div>
-            )}
-          </div>
-
-          <div className="w-full md:w-96 bg-gray-900 flex flex-col border-l border-gray-800">
-            <div className="flex border-b border-gray-800">
-              {(['details', 'edit', 'repair', 'export'] as EditorTab[]).map(tab => (
-                <button key={tab} onClick={() => setActiveTab(tab)}
-                  className={`flex-1 py-3 text-xs font-bold border-b-2 ${activeTab === tab ? 'border-cyan-500 text-cyan-400' : 'border-transparent text-gray-500 hover:text-white'}`}>
-                  {tab === 'details' && 'Détails'}
-                  {tab === 'edit' && <><Wand2 size={12} className="inline mr-1" />Retouche</>}
-                  {tab === 'repair' && <><Wrench size={12} className="inline mr-1" />Réparer</>}
-                  {tab === 'export' && <><Crop size={12} className="inline mr-1" />Export</>}
-                </button>
-              ))}
+      {/* COMPARISON MODAL */}
+      {
+        showComparisonModal && comparisonIds.length === 2 && (
+          <div className="fixed inset-0 z-[100] bg-black/95 flex flex-col p-4 animate-fade-in">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold text-white flex items-center gap-2"><SplitSquareHorizontal className="text-cyan-500" />Comparateur</h2>
+              <button onClick={() => setShowComparisonModal(false)} className="p-2 bg-gray-800 rounded-full hover:bg-gray-700"><X size={20} /></button>
             </div>
-
-            <div className="flex-1 overflow-y-auto p-6">
-              {activeTab === 'details' && (
-                <div className="space-y-6 animate-fade-in">
-                  <div><label className="text-xs text-gray-500 uppercase">Prompt</label><p className="text-sm text-gray-300 mt-1 bg-gray-950 p-3 rounded-lg border border-gray-800 max-h-32 overflow-y-auto">{lightboxImage.prompt}</p></div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div><label className="text-xs text-gray-500 uppercase">Mode</label><p className="text-sm text-cyan-400 mt-1">{lightboxImage.mode}</p></div>
-                    {lightboxImage.styleId && <div><label className="text-xs text-gray-500 uppercase">Style</label><p className="text-sm text-gray-300 mt-1">{ART_STYLES.find(s => s.id === lightboxImage.styleId)?.icon} {ART_STYLES.find(s => s.id === lightboxImage.styleId)?.label}</p></div>}
-                  </div>
-                  <div className="pt-6 border-t border-gray-800 space-y-3">
-                    <div className="flex gap-2">
-                      <button onClick={() => onFeedback(lightboxImage.id, 'like')} className={`flex-1 py-2 rounded-lg flex items-center justify-center gap-2 ${lightboxImage.feedback === 'like' ? 'bg-green-600' : 'bg-gray-800 hover:bg-gray-700'}`}><ThumbsUp size={16} />J'aime</button>
-                      <button onClick={() => onFeedback(lightboxImage.id, 'dislike')} className={`flex-1 py-2 rounded-lg flex items-center justify-center gap-2 ${lightboxImage.feedback === 'dislike' ? 'bg-red-600' : 'bg-gray-800 hover:bg-gray-700'}`}><ThumbsDown size={16} /></button>
+            <div className="flex-1 grid grid-cols-2 gap-4 overflow-hidden">
+              {comparisonIds.map((id, idx) => {
+                const img = recentImages.find(i => i.id === id);
+                if (!img) return null;
+                return (
+                  <div key={id} className="flex flex-col h-full bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+                    <div className="flex-1 relative"><img src={img.url} className="w-full h-full object-contain bg-black" /><div className="absolute top-4 left-4 bg-black/70 px-3 py-1 rounded-full font-bold">{idx === 0 ? 'A' : 'B'}</div></div>
+                    <div className="p-4 border-t border-gray-800 flex justify-between items-center">
+                      <p className="text-xs text-gray-400 truncate flex-1">{new Date(img.timestamp).toLocaleDateString()}</p>
+                      <div className="flex gap-2">
+                        <button onClick={() => onFeedback(img.id, 'like')} className={`p-2 rounded-lg ${img.feedback === 'like' ? 'bg-green-600' : 'bg-gray-800 hover:bg-gray-700'}`}><ThumbsUp size={18} /></button>
+                        <a href={img.url} download className="p-2 bg-gray-800 rounded-lg hover:bg-gray-700"><Download size={18} /></a>
+                      </div>
                     </div>
-                    <a href={lightboxImage.url} download={`pulsee-${lightboxImage.id}.png`} className="w-full py-3 bg-white text-black font-bold rounded-lg flex items-center justify-center gap-2 hover:bg-gray-200"><Download size={18} />Télécharger HD</a>
                   </div>
-                </div>
-              )}
+                );
+              })}
+            </div>
+          </div>
+        )
+      }
 
-              {activeTab === 'edit' && (
-                <div className="space-y-6 animate-fade-in">
-                  <div className="bg-purple-900/20 border border-purple-500/20 p-4 rounded-xl">
-                    <h4 className="font-bold text-purple-300 mb-2 flex items-center gap-2"><Wand2 size={16} />Éditeur Magique</h4>
-                    <p className="text-xs text-purple-200/70 mb-4">Décrivez les modifications souhaitées.</p>
-                    <textarea value={editInstruction} onChange={(e) => setEditInstruction(e.target.value)} placeholder="Ex: Ajoute des lunettes, change le fond..."
-                      className="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-sm text-white min-h-[100px] focus:ring-2 focus:ring-purple-500 outline-none resize-none" />
-                    <Button onClick={handleMagicEdit} disabled={!editInstruction.trim() || isProcessingEdit} isLoading={isProcessingEdit} className="w-full mt-4 bg-purple-600 hover:bg-purple-500">
-                      <Sparkles size={16} />Appliquer
-                    </Button>
+      {/* LIGHTBOX */}
+      {
+        lightboxImage && (
+          <div className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4 animate-fade-in">
+            <button onClick={() => { setLightboxImage(null); setActiveTab('details'); setEditInstruction(''); }} className="absolute top-4 right-4 p-2 bg-gray-800 rounded-full text-white hover:bg-gray-700 z-10"><X size={24} /></button>
+
+            <div className="max-w-6xl w-full flex flex-col md:flex-row bg-gray-900 rounded-2xl overflow-hidden border border-gray-800 shadow-2xl h-[85vh]">
+              <div className="flex-1 bg-black flex items-center justify-center p-4 relative">
+                <img src={lightboxImage.url} className="max-w-full max-h-full object-contain shadow-2xl rounded-lg" />
+                {isProcessingEdit && (
+                  <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center z-20">
+                    <Sparkles className="animate-spin text-cyan-500 mb-4" size={48} /><p className="text-xl font-bold">L'IA travaille...</p>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
 
-              {activeTab === 'repair' && (
-                <div className="space-y-6 animate-fade-in">
-                  <div className="bg-red-900/20 border border-red-500/20 p-4 rounded-xl">
-                    <h4 className="font-bold text-red-300 mb-2 flex items-center gap-2"><Wrench size={16} />Réparation Produit</h4>
-                    <p className="text-xs text-red-200/70 mb-4">Restaure les détails du produit (texte, logo).</p>
-                    {lightboxProduct ? (
-                      <div className="space-y-4">
-                        <div className="flex items-center gap-3 p-3 bg-gray-800 rounded-lg">
-                          <img src={lightboxProduct.images[0]} className="w-12 h-12 object-cover rounded" />
-                          <div><p className="text-sm text-white font-bold">{lightboxProduct.name}</p><p className="text-[10px] text-gray-500">Référence</p></div>
+              <div className="w-full md:w-96 bg-gray-900 flex flex-col border-l border-gray-800">
+                <div className="flex border-b border-gray-800">
+                  {(['details', 'edit', 'repair', 'export'] as EditorTab[]).map(tab => (
+                    <button key={tab} onClick={() => setActiveTab(tab)}
+                      className={`flex-1 py-3 text-xs font-bold border-b-2 ${activeTab === tab ? 'border-cyan-500 text-cyan-400' : 'border-transparent text-gray-500 hover:text-white'}`}>
+                      {tab === 'details' && 'Détails'}
+                      {tab === 'edit' && <><Wand2 size={12} className="inline mr-1" />Retouche</>}
+                      {tab === 'repair' && <><Wrench size={12} className="inline mr-1" />Réparer</>}
+                      {tab === 'export' && <><Crop size={12} className="inline mr-1" />Export</>}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-6">
+                  {activeTab === 'details' && (
+                    <div className="space-y-6 animate-fade-in">
+                      <div><label className="text-xs text-gray-500 uppercase">Prompt</label><p className="text-sm text-gray-300 mt-1 bg-gray-950 p-3 rounded-lg border border-gray-800 max-h-32 overflow-y-auto">{lightboxImage.prompt}</p></div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div><label className="text-xs text-gray-500 uppercase">Mode</label><p className="text-sm text-cyan-400 mt-1">{lightboxImage.mode}</p></div>
+                        {lightboxImage.styleId && <div><label className="text-xs text-gray-500 uppercase">Style</label><p className="text-sm text-gray-300 mt-1">{ART_STYLES.find(s => s.id === lightboxImage.styleId)?.icon} {ART_STYLES.find(s => s.id === lightboxImage.styleId)?.label}</p></div>}
+                      </div>
+                      <div className="pt-6 border-t border-gray-800 space-y-3">
+                        <div className="flex gap-2">
+                          <button onClick={() => onFeedback(lightboxImage.id, 'like')} className={`flex-1 py-2 rounded-lg flex items-center justify-center gap-2 ${lightboxImage.feedback === 'like' ? 'bg-green-600' : 'bg-gray-800 hover:bg-gray-700'}`}><ThumbsUp size={16} />J'aime</button>
+                          <button onClick={() => onFeedback(lightboxImage.id, 'dislike')} className={`flex-1 py-2 rounded-lg flex items-center justify-center gap-2 ${lightboxImage.feedback === 'dislike' ? 'bg-red-600' : 'bg-gray-800 hover:bg-gray-700'}`}><ThumbsDown size={16} /></button>
                         </div>
-                        <Button onClick={handleRepairProduct} disabled={isProcessingEdit} isLoading={isProcessingEdit} className="w-full bg-red-600 hover:bg-red-500">
-                          <Sparkles size={16} />Restaurer
+                        <a href={lightboxImage.url} download={`pulsee-${lightboxImage.id}.png`} className="w-full py-3 bg-white text-black font-bold rounded-lg flex items-center justify-center gap-2 hover:bg-gray-200"><Download size={18} />Télécharger HD</a>
+                      </div>
+                    </div>
+                  )}
+
+                  {activeTab === 'edit' && (
+                    <div className="space-y-6 animate-fade-in">
+                      <div className="bg-purple-900/20 border border-purple-500/20 p-4 rounded-xl">
+                        <h4 className="font-bold text-purple-300 mb-2 flex items-center gap-2"><Wand2 size={16} />Éditeur Magique</h4>
+                        <p className="text-xs text-purple-200/70 mb-4">Décrivez les modifications souhaitées.</p>
+                        <textarea value={editInstruction} onChange={(e) => setEditInstruction(e.target.value)} placeholder="Ex: Ajoute des lunettes, change le fond..."
+                          className="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-sm text-white min-h-[100px] focus:ring-2 focus:ring-purple-500 outline-none resize-none" />
+                        <Button onClick={handleMagicEdit} disabled={!editInstruction.trim() || isProcessingEdit} isLoading={isProcessingEdit} className="w-full mt-4 bg-purple-600 hover:bg-purple-500">
+                          <Sparkles size={16} />Appliquer
                         </Button>
                       </div>
-                    ) : <div className="text-xs text-gray-400 italic text-center p-4 border border-dashed border-gray-700 rounded">Aucun produit lié.</div>}
-                  </div>
-                </div>
-              )}
-
-              {activeTab === 'export' && (
-                <div className="space-y-6 animate-fade-in">
-                  <div className="bg-green-900/20 border border-green-500/20 p-4 rounded-xl">
-                    <h4 className="font-bold text-green-300 mb-2 flex items-center gap-2"><Crop size={16} />Export</h4>
-                    <p className="text-xs text-green-200/70 mb-4">Étendez l'image pour les réseaux sociaux.</p>
-                    <div className="grid grid-cols-2 gap-3">
-                      <button onClick={() => handleExport('9:16')} disabled={isProcessingEdit}
-                        className="flex flex-col items-center gap-2 p-4 bg-gray-800 hover:bg-gray-700 rounded-lg border border-gray-700 disabled:opacity-50">
-                        <div className="w-6 h-10 border-2 border-green-400 rounded-sm bg-green-900/30"></div>
-                        <span className="text-xs font-bold text-gray-300">Story 9:16</span>
-                      </button>
-                      <button onClick={() => handleExport('16:9')} disabled={isProcessingEdit}
-                        className="flex flex-col items-center gap-2 p-4 bg-gray-800 hover:bg-gray-700 rounded-lg border border-gray-700 disabled:opacity-50">
-                        <div className="w-10 h-6 border-2 border-green-400 rounded-sm bg-green-900/30"></div>
-                        <span className="text-xs font-bold text-gray-300">Banner 16:9</span>
-                      </button>
                     </div>
-                  </div>
+                  )}
+
+                  {activeTab === 'repair' && (
+                    <div className="space-y-6 animate-fade-in">
+                      <div className="bg-red-900/20 border border-red-500/20 p-4 rounded-xl">
+                        <h4 className="font-bold text-red-300 mb-2 flex items-center gap-2"><Wrench size={16} />Réparation Produit</h4>
+                        <p className="text-xs text-red-200/70 mb-4">Restaure les détails du produit (texte, logo).</p>
+                        {lightboxProduct ? (
+                          <div className="space-y-4">
+                            <div className="flex items-center gap-3 p-3 bg-gray-800 rounded-lg">
+                              <img src={lightboxProduct.images[0]} className="w-12 h-12 object-cover rounded" />
+                              <div><p className="text-sm text-white font-bold">{lightboxProduct.name}</p><p className="text-[10px] text-gray-500">Référence</p></div>
+                            </div>
+                            <Button onClick={handleRepairProduct} disabled={isProcessingEdit} isLoading={isProcessingEdit} className="w-full bg-red-600 hover:bg-red-500">
+                              <Sparkles size={16} />Restaurer
+                            </Button>
+                          </div>
+                        ) : <div className="text-xs text-gray-400 italic text-center p-4 border border-dashed border-gray-700 rounded">Aucun produit lié.</div>}
+                      </div>
+                    </div>
+                  )}
+
+                  {activeTab === 'export' && (
+                    <div className="space-y-6 animate-fade-in">
+                      <div className="bg-green-900/20 border border-green-500/20 p-4 rounded-xl">
+                        <h4 className="font-bold text-green-300 mb-2 flex items-center gap-2"><Crop size={16} />Export</h4>
+                        <p className="text-xs text-green-200/70 mb-4">Étendez l'image pour les réseaux sociaux.</p>
+                        <div className="grid grid-cols-2 gap-3">
+                          <button onClick={() => handleExport('9:16')} disabled={isProcessingEdit}
+                            className="flex flex-col items-center gap-2 p-4 bg-gray-800 hover:bg-gray-700 rounded-lg border border-gray-700 disabled:opacity-50">
+                            <div className="w-6 h-10 border-2 border-green-400 rounded-sm bg-green-900/30"></div>
+                            <span className="text-xs font-bold text-gray-300">Story 9:16</span>
+                          </button>
+                          <button onClick={() => handleExport('16:9')} disabled={isProcessingEdit}
+                            className="flex flex-col items-center gap-2 p-4 bg-gray-800 hover:bg-gray-700 rounded-lg border border-gray-700 disabled:opacity-50">
+                            <div className="w-10 h-6 border-2 border-green-400 rounded-sm bg-green-900/30"></div>
+                            <span className="text-xs font-bold text-gray-300">Banner 16:9</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
             </div>
           </div>
-        </div>
-      </div>
-    )
-  }
+        )
+      }
     </div >
   );
 };
