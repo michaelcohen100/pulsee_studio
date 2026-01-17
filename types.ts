@@ -76,6 +76,45 @@ export type EditorTab = 'details' | 'edit' | 'export' | 'repair';
 export type ExportFormat = '9:16' | '16:9' | '1:1' | '4:5';
 
 // ============================================
+// MARKETING PERSONAS (TARGET AUDIENCES)
+// ============================================
+
+export interface MarketingPersona {
+  id: string;
+  name: string;
+  description: string;           // Short description of the persona
+  ageRange: string;              // "25-35", "45-55"
+  occupation: string;            // "entrepreneur", "étudiant", "parent"
+  lifestyle: string;             // "sportif", "gaming", "travailleur"
+  energyNeed: string;            // Context for Pulsee usage
+  visualKeywords: string[];      // Keywords injected into prompts
+  icon: string;                  // Emoji for UI
+  color: string;                 // Tailwind gradient classes
+}
+
+// ============================================
+// ENHANCED AI MANNEQUIN CONFIGURATION
+// ============================================
+
+export interface AIModelConfig {
+  age: '20s' | '30s' | '40s' | '50s';
+  gender: 'male' | 'female' | 'neutral';
+  style: 'professional' | 'casual' | 'sporty' | 'elegant' | 'street';
+  ethnicity?: string;
+  bodyType?: 'slim' | 'athletic' | 'average' | 'curvy';
+  hairStyle?: string;
+  facialExpression: 'neutral' | 'smiling' | 'serious' | 'confident' | 'friendly';
+}
+
+export interface AIModelTemplate {
+  id: string;
+  name: string;
+  description: string;
+  config: AIModelConfig;
+  icon: string;
+}
+
+// ============================================
 // QUEUE & BATCH GENERATION TYPES
 // ============================================
 

@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { AppState, GenerationMode, GeneratedImage, ArtStyle, EditorTab, ExportFormat, EntityProfile } from '../types';
+import { AppState, GenerationMode, GeneratedImage, ArtStyle, EditorTab, ExportFormat, EntityProfile, MarketingPersona } from '../types';
 import { generateBrandVisual, suggestPrompts, editGeneratedVisual, expandImageForFormat, generateAIModelDescription, generateAIModelImages, repairProductIdentity } from '../services/geminiService';
 import { GenerationQueue, QueueProgress } from '../utils/generationQueue';
 import { Button } from './Button';
 import { Promptor } from './Promptor';
-import { Sparkles, User, Package, Download, ThumbsUp, ThumbsDown, CheckCircle2, Circle, AlertTriangle, Layers, Maximize2, X, Palette, Wand2, SplitSquareHorizontal, Crop, Check, Wrench, Play, Square, Clock, Zap, Star, AlertCircle } from 'lucide-react';
+import { PersonaSelector } from './PersonaSelector';
+import { ArrowRight, Sparkles, User, Package, Download, ThumbsUp, ThumbsDown, CheckCircle2, Circle, AlertTriangle, Layers, Maximize2, X, Palette, Wand2, SplitSquareHorizontal, Crop, Check, Wrench, Play, Square, Clock, Zap, Star, AlertCircle, Settings, ChevronDown, Camera } from 'lucide-react';
 
 // ============================================
 // ART STYLES - Avec style Pulsee Signature
@@ -80,7 +81,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
   const [prompt, setPrompt] = useState('');
   const [selectedStyle, setSelectedStyle] = useState<ArtStyle>(ART_STYLES[1]); // Default: Pulsee Signature
   const [variationCount, setVariationCount] = useState<number>(1);
-  
+  const [selectedPersona, setSelectedPersona] = useState<MarketingPersona | null>(null);
+  const [isUltraRealistic, setIsUltraRealistic] = useState(false); // NEW: Ultra Realistic Toggle
+
   // === SELECTION STATE ===
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
   const [selectedPersonIds, setSelectedPersonIds] = useState<string[]>([]);
@@ -99,7 +102,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
   const [showPromptor, setShowPromptor] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [notification, setNotification] = useState<{ type: 'success' | 'error' | 'warning'; message: string } | null>(null);
-  
+  const [showMobileFilters, setShowMobileFilters] = useState(true); // NEW: Mobile UI State
+
   // === LIGHTBOX STATE ===
   const [lightboxImage, setLightboxImage] = useState<GeneratedImage | null>(null);
   const [activeTab, setActiveTab] = useState<EditorTab>('details');
@@ -117,10 +121,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
   const primaryProduct = selectedProducts[0] || null;
   const activePerson = selectedPeople[0] || null;
 
-  const mode = (selectedPeople.length > 0 && selectedProducts.length > 0) ? GenerationMode.COMBINED 
-               : (selectedPeople.length > 0) ? GenerationMode.USER_ONLY
-               : (selectedProducts.length > 0) ? GenerationMode.PRODUCT_ONLY
-               : GenerationMode.USER_ONLY;
+  const mode = (selectedPeople.length > 0 && selectedProducts.length > 0) ? GenerationMode.COMBINED
+    : (selectedPeople.length > 0) ? GenerationMode.USER_ONLY
+      : (selectedProducts.length > 0) ? GenerationMode.PRODUCT_ONLY
+        : GenerationMode.USER_ONLY;
 
   // === EFFECTS ===
   useEffect(() => {
@@ -164,7 +168,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
     try {
       const desc = await generateAIModelDescription(quickAIInput);
       const images = await generateAIModelImages(desc);
-      
+
       const newProfile: EntityProfile = {
         id: `quick_ai_${Date.now()}`,
         name: `IA: ${quickAIInput.substring(0, 20)}${quickAIInput.length > 20 ? '...' : ''}`,
@@ -174,7 +178,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
         isAI: true,
         createdAt: Date.now()
       };
-      
+
       onQuickAI(newProfile);
       setSelectedPersonIds(prev => [...prev, newProfile.id]);
       setShowQuickAI(false);
@@ -193,15 +197,28 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
       showNotification('warning', "Veuillez entrer une description.");
       return;
     }
-    
+
     setIsGenerating(true);
     const startTime = Date.now();
-    const finalPrompt = `${prompt}.\n\nSTYLE: ${selectedStyle.promptModifier}`;
+
+    // Build prompt with persona keywords if selected
+    let personaContext = '';
+    if (selectedPersona) {
+      personaContext = `\n\nTARGET AUDIENCE: ${selectedPersona.name} (${selectedPersona.ageRange} ans, ${selectedPersona.occupation})
+CONTEXT: ${selectedPersona.energyNeed}
+VISUAL KEYWORDS: ${selectedPersona.visualKeywords.join(', ')}`;
+    }
+
+    const finalPrompt = `${prompt}.${personaContext}\n\nSTYLE: ${selectedStyle.promptModifier}`;
 
     const generateOne = async (): Promise<string> => {
       return generateBrandVisual(
         finalPrompt, mode, selectedPeople, selectedProducts, appState.likedPrompts,
-        { injectPulseeBranding: selectedStyle.id === 'pulsee_cold', prioritizeProductFidelity: true }
+        {
+          injectPulseeBranding: selectedStyle.id === 'pulsee_cold',
+          prioritizeProductFidelity: true,
+          ultraRealistic: isUltraRealistic // NEW: Pass the option
+        }
       );
     };
 
@@ -225,10 +242,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
         const completed = results.filter(r => r.status === 'completed').length;
         const failed = results.filter(r => r.status === 'failed').length;
         const totalTime = Math.round((Date.now() - startTime) / 1000);
-        
+
         if (completed > 0) showNotification('success', `${completed} image(s) générée(s) en ${totalTime}s`);
         else if (failed > 0) showNotification('error', `Échec: ${results[0]?.error || 'Erreur'}`);
-        
+
         setIsGenerating(false);
         setQueueProgress(null);
         queueRef.current = null;
@@ -292,7 +309,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
     if (!lightboxImage?.productId) return showNotification('warning', "Aucun produit associé.");
     const product = appState.products.find(p => p.id === lightboxImage.productId);
     if (!product?.images.length) return showNotification('error', "Produit introuvable.");
-    
+
     setIsProcessingEdit(true);
     try {
       const newUrl = await repairProductIdentity(lightboxImage.url, product.images[0]);
@@ -316,16 +333,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
   const progressPercentage = queueProgress ? Math.round(((queueProgress.completed + queueProgress.failed) / queueProgress.total) * 100) : 0;
 
   return (
-    <div className="container mx-auto px-4 py-8 max-w-6xl">
-      
+    <div className="container mx-auto px-4 py-4 sm:py-8 max-w-6xl">
+
       {/* NOTIFICATION */}
       {notification && (
-        <div className="fixed top-20 right-4 z-[200] animate-fade-in max-w-sm">
-          <div className={`px-4 py-3 rounded-lg shadow-lg border flex items-start gap-3 ${
-            notification.type === 'success' ? 'bg-green-900/90 border-green-500 text-green-100' :
+        <div className="fixed top-20 right-4 z-[200] animate-fade-in max-w-[90vw] sm:max-w-sm">
+          <div className={`px-4 py-3 rounded-lg shadow-lg border flex items-start gap-3 ${notification.type === 'success' ? 'bg-green-900/90 border-green-500 text-green-100' :
             notification.type === 'error' ? 'bg-red-900/90 border-red-500 text-red-100' :
-            'bg-yellow-900/90 border-yellow-500 text-yellow-100'
-          }`}>
+              'bg-yellow-900/90 border-yellow-500 text-yellow-100'
+            }`}>
             {notification.type === 'success' && <CheckCircle2 size={20} className="shrink-0" />}
             {notification.type === 'error' && <AlertCircle size={20} className="shrink-0" />}
             {notification.type === 'warning' && <AlertTriangle size={20} className="shrink-0" />}
@@ -335,11 +351,43 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
+      {/* MOBILE FILTER TOGGLE */}
+      <div className="lg:hidden mb-4">
+        <button
+          onClick={() => setShowMobileFilters(!showMobileFilters)}
+          className="w-full flex items-center justify-between bg-gray-900 border border-gray-800 p-3 rounded-lg text-sm font-medium"
+        >
+          <span className="flex items-center gap-2"><Settings size={16} className="text-cyan-500" /> Configuration</span>
+          <ChevronDown size={16} className={`transition-transform ${showMobileFilters ? 'rotate-180' : ''}`} />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
+
         {/* LEFT: CONTROLS */}
-        <div className="lg:col-span-1 space-y-6">
-          
+        <div className={`lg:col-span-1 space-y-6 ${showMobileFilters ? 'block' : 'hidden lg:block'}`}>
+
+          {/* ULTRA REALISTIC TOGGLE */}
+          <div
+            onClick={() => setIsUltraRealistic(!isUltraRealistic)}
+            className={`p-4 rounded-xl border cursor-pointer transition-all flex items-center gap-3 ${isUltraRealistic
+              ? 'bg-gradient-to-r from-amber-900/40 to-orange-900/40 border-amber-500/50 relative overflow-hidden'
+              : 'bg-gray-900 border-gray-800 hover:border-gray-700'
+              }`}
+          >
+            {isUltraRealistic && <div className="absolute inset-0 bg-amber-500/5 blur-xl"></div>}
+            <div className={`p-2 rounded-lg ${isUltraRealistic ? 'bg-amber-500 text-black' : 'bg-gray-800 text-gray-400'}`}>
+              <Camera size={20} />
+            </div>
+            <div>
+              <h3 className={`font-bold text-sm ${isUltraRealistic ? 'text-amber-400' : 'text-gray-300'}`}>Mode Ultra-Réaliste</h3>
+              <p className="text-[10px] text-gray-500 leading-tight">Photos 8K photoréalistes, grain naturel, sans effet "lissé".</p>
+            </div>
+            <div className={`ml-auto w-10 h-6 rounded-full p-1 transition-colors ${isUltraRealistic ? 'bg-amber-500' : 'bg-gray-800'}`}>
+              <div className={`w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${isUltraRealistic ? 'translate-x-4' : ''}`} />
+            </div>
+          </div>
+
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 space-y-4">
             <div className="flex items-center gap-2 mb-2">
               <div className="w-2 h-2 rounded-full bg-cyan-500 animate-pulse"></div>
@@ -380,7 +428,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
                       <div key={p.id} onClick={() => togglePerson(p.id)}
                         className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer border transition-all ${isSelected ? 'bg-purple-900/20 border-purple-500/50' : 'bg-gray-800 border-gray-800 hover:border-gray-700'}`}>
                         <div className={isSelected ? 'text-purple-400' : 'text-gray-600'}>{isSelected ? <CheckCircle2 size={16} /> : <Circle size={16} />}</div>
-                        {p.images.length > 0 ? <img src={p.images[0]} alt={p.name} className="w-8 h-8 rounded-full object-cover" /> : <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center"><User size={12}/></div>}
+                        {p.images.length > 0 ? <img src={p.images[0]} alt={p.name} className="w-8 h-8 rounded-full object-cover" /> : <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center"><User size={12} /></div>}
                         <div className="flex flex-col min-w-0">
                           <span className={`text-sm truncate ${isSelected ? 'text-white' : 'text-gray-400'}`}>{p.name}</span>
                           {p.isAI && <span className="text-[8px] text-purple-400 bg-purple-900/30 px-1 rounded w-fit">IA</span>}
@@ -403,7 +451,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
                       <div key={p.id} onClick={() => toggleProduct(p.id)}
                         className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer border transition-all ${isSelected ? 'bg-cyan-900/20 border-cyan-500/50' : 'bg-gray-800 border-gray-800 hover:border-gray-700'}`}>
                         <div className={isSelected ? 'text-cyan-400' : 'text-gray-600'}>{isSelected ? <CheckCircle2 size={16} /> : <Circle size={16} />}</div>
-                        {p.images.length > 0 ? <img src={p.images[0]} alt={p.name} className="w-8 h-8 rounded object-cover" /> : <div className="w-8 h-8 rounded bg-gray-700 flex items-center justify-center"><Package size={12}/></div>}
+                        {p.images.length > 0 ? <img src={p.images[0]} alt={p.name} className="w-8 h-8 rounded object-cover" /> : <div className="w-8 h-8 rounded bg-gray-700 flex items-center justify-center"><Package size={12} /></div>}
                         <span className={`text-sm truncate ${isSelected ? 'text-white' : 'text-gray-400'}`}>{p.name}</span>
                       </div>
                     );
@@ -413,9 +461,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
             </div>
           </div>
 
+          {/* PERSONA SELECTOR */}
+          <PersonaSelector
+            selectedPersona={selectedPersona}
+            onSelectPersona={setSelectedPersona}
+          />
+
           {/* STYLE SELECTOR */}
           <div className="space-y-3">
-            <div className="flex items-center gap-2 text-white font-bold"><Palette size={16} className="text-cyan-500"/><h3>Style</h3></div>
+            <div className="flex items-center gap-2 text-white font-bold"><Palette size={16} className="text-cyan-500" /><h3>Style</h3></div>
             <div className="grid grid-cols-3 gap-2">
               {ART_STYLES.map((style) => (
                 <button key={style.id} onClick={() => setSelectedStyle(style)}
@@ -442,7 +496,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
 
             <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Décrivez la scène..."
               className="w-full bg-gray-900 border border-gray-800 rounded-lg p-3 text-white h-28 resize-none focus:ring-2 focus:ring-cyan-500/50 outline-none text-sm" disabled={isGenerating} />
-            
+
             {/* VARIATIONS */}
             <div className="bg-gray-900/50 border border-gray-800 rounded-lg p-3">
               <div className="flex justify-between items-center mb-2">
@@ -501,7 +555,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
               <SplitSquareHorizontal size={14} />{isComparisonMode ? 'Actif' : 'Comparer'}
             </button>
           </div>
-           
+
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
             {recentImages.length === 0 ? (
               <div className="col-span-full flex flex-col items-center justify-center h-64 text-gray-600 border-2 border-dashed border-gray-800 rounded-2xl">
@@ -538,7 +592,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
         <div className="fixed inset-0 z-[100] bg-black/95 flex flex-col p-4 animate-fade-in">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-xl font-bold text-white flex items-center gap-2"><SplitSquareHorizontal className="text-cyan-500" />Comparateur</h2>
-            <button onClick={() => setShowComparisonModal(false)} className="p-2 bg-gray-800 rounded-full hover:bg-gray-700"><X size={20}/></button>
+            <button onClick={() => setShowComparisonModal(false)} className="p-2 bg-gray-800 rounded-full hover:bg-gray-700"><X size={20} /></button>
           </div>
           <div className="flex-1 grid grid-cols-2 gap-4 overflow-hidden">
             {comparisonIds.map((id, idx) => {
@@ -582,13 +636,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, onImageGenerated
                   <button key={tab} onClick={() => setActiveTab(tab)}
                     className={`flex-1 py-3 text-xs font-bold border-b-2 ${activeTab === tab ? 'border-cyan-500 text-cyan-400' : 'border-transparent text-gray-500 hover:text-white'}`}>
                     {tab === 'details' && 'Détails'}
-                    {tab === 'edit' && <><Wand2 size={12} className="inline mr-1"/>Retouche</>}
-                    {tab === 'repair' && <><Wrench size={12} className="inline mr-1"/>Réparer</>}
-                    {tab === 'export' && <><Crop size={12} className="inline mr-1"/>Export</>}
+                    {tab === 'edit' && <><Wand2 size={12} className="inline mr-1" />Retouche</>}
+                    {tab === 'repair' && <><Wrench size={12} className="inline mr-1" />Réparer</>}
+                    {tab === 'export' && <><Crop size={12} className="inline mr-1" />Export</>}
                   </button>
                 ))}
               </div>
-              
+
               <div className="flex-1 overflow-y-auto p-6">
                 {activeTab === 'details' && (
                   <div className="space-y-6 animate-fade-in">

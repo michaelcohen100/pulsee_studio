@@ -24,7 +24,7 @@ const App: React.FC = () => {
       try {
         const profiles = await db.getProfiles();
         const gallery = await db.getGallery();
-        
+
         const people = profiles.filter((p: any) => p.type === 'PERSON');
         const products = profiles.filter((p: any) => p.type === 'PRODUCT');
 
@@ -34,7 +34,7 @@ const App: React.FC = () => {
           gallery,
           likedPrompts: []
         });
-        
+
         // Removed forced redirection to Onboarding
       } catch (e) {
         console.error("Failed to load DB", e);
@@ -78,7 +78,7 @@ const App: React.FC = () => {
   const handleUpdatePeople = async (newPeopleList: EntityProfile[]) => {
     // 1. Determine deletions based on current state vs new list
     const deleted = state.people.filter(p => !newPeopleList.find(newP => newP.id === p.id));
-    
+
     // 2. Perform DB operations outside of setState
     await Promise.all([
       ...deleted.map(d => db.deleteProfile(d.id)),
@@ -87,15 +87,15 @@ const App: React.FC = () => {
 
     // 3. Update UI State
     setState(prev => ({
-       ...prev, 
-       people: newPeopleList 
+      ...prev,
+      people: newPeopleList
     }));
   };
 
   const handleUpdateProducts = async (newProductList: EntityProfile[]) => {
     // 1. Determine deletions
     const deleted = state.products.filter(p => !newProductList.find(newP => newP.id === p.id));
-    
+
     // 2. Perform DB operations
     await Promise.all([
       ...deleted.map(d => db.deleteProfile(d.id)),
@@ -104,8 +104,8 @@ const App: React.FC = () => {
 
     // 3. Update UI State
     setState(prev => ({
-       ...prev, 
-       products: newProductList 
+      ...prev,
+      products: newProductList
     }));
   };
 
@@ -122,7 +122,7 @@ const App: React.FC = () => {
     if (targetImg) {
       const updatedImg = { ...targetImg, feedback: type };
       await db.updateImage(updatedImg); // Update DB
-      
+
       setState(prev => {
         let newLikedPrompts = [...prev.likedPrompts];
         if (type === 'like' && !newLikedPrompts.includes(targetImg.prompt)) {
@@ -130,7 +130,7 @@ const App: React.FC = () => {
         } else if (type === 'dislike') {
           newLikedPrompts = newLikedPrompts.filter(p => p !== targetImg.prompt);
         }
-        
+
         return {
           ...prev,
           gallery: prev.gallery.map(g => g.id === id ? updatedImg : g),
@@ -157,26 +157,26 @@ const App: React.FC = () => {
   if (view === AppStep.ONBOARDING) {
     return (
       <div className="min-h-screen bg-black text-white">
-         <nav className="border-b border-gray-800 p-4">
-            <div className="flex items-center gap-2 text-xl font-bold">
-              <Sparkles className="text-blue-500" /> Studio Photo Pulsee
-            </div>
-         </nav>
-         <div className="pt-10">
-           <TrainingWizard onComplete={handleOnboardingComplete} />
-         </div>
+        <nav className="border-b border-gray-800 p-4">
+          <div className="flex items-center gap-2 text-xl font-bold">
+            <Sparkles className="text-blue-500" /> Studio Photo Pulsee
+          </div>
+        </nav>
+        <div className="pt-10">
+          <TrainingWizard onComplete={handleOnboardingComplete} />
+        </div>
       </div>
     );
   }
 
   if (view === AppStep.AI_CREATOR) {
     return (
-       <div className="min-h-screen bg-black text-white">
-          <AICharacterCreator 
-            onSave={handleSaveAIProfile} 
-            onCancel={() => setView(AppStep.STUDIO)} 
-          />
-       </div>
+      <div className="min-h-screen bg-black text-white">
+        <AICharacterCreator
+          onSave={handleSaveAIProfile}
+          onCancel={() => setView(AppStep.STUDIO)}
+        />
+      </div>
     );
   }
 
@@ -184,27 +184,27 @@ const App: React.FC = () => {
     <div className="min-h-screen bg-black text-gray-100 font-sans selection:bg-blue-500/30 pb-20">
       {/* Navbar */}
       <nav className="border-b border-gray-800 bg-black/50 backdrop-blur-md sticky top-0 z-50">
-        <div className="container mx-auto px-6 h-16 flex items-center justify-between">
+        <div className="container mx-auto px-3 sm:px-6 h-14 sm:h-16 flex items-center justify-between">
           <div className="flex items-center gap-2 cursor-pointer" onClick={() => setView(AppStep.STUDIO)}>
-            <div className="bg-gradient-to-tr from-blue-600 to-purple-600 p-2 rounded-lg">
-              <Sparkles size={20} className="text-white" />
+            <div className="bg-gradient-to-tr from-blue-600 to-purple-600 p-1.5 sm:p-2 rounded-lg">
+              <Sparkles size={18} className="text-white sm:w-5 sm:h-5" />
             </div>
-            <span className="font-bold text-xl tracking-tight hidden md:block">Studio Photo Pulsee</span>
+            <span className="font-bold text-lg sm:text-xl tracking-tight">Pulsee</span>
           </div>
-          
+
           {/* Navigation Tabs */}
           <div className="flex items-center gap-1 bg-gray-900 p-1 rounded-lg border border-gray-800">
-            <NavButton 
-              active={view === AppStep.STUDIO} 
-              onClick={() => setView(AppStep.STUDIO)} 
-              icon={Settings} 
-              label="Studio" 
+            <NavButton
+              active={view === AppStep.STUDIO}
+              onClick={() => setView(AppStep.STUDIO)}
+              icon={Settings}
+              label="Studio"
             />
-            <NavButton 
-              active={view === AppStep.DASHBOARD} 
-              onClick={() => setView(AppStep.DASHBOARD)} 
-              icon={LayoutDashboard} 
-              label="Créer" 
+            <NavButton
+              active={view === AppStep.DASHBOARD}
+              onClick={() => setView(AppStep.DASHBOARD)}
+              icon={LayoutDashboard}
+              label="Créer"
             />
           </div>
         </div>
@@ -212,9 +212,9 @@ const App: React.FC = () => {
 
       <main>
         {view === AppStep.DASHBOARD && (
-          <Dashboard 
-            appState={state} 
-            onImageGenerated={handleImageGenerated} 
+          <Dashboard
+            appState={state}
+            onImageGenerated={handleImageGenerated}
             onFeedback={handleFeedback}
             onQuickAI={(profile) => {
               handleSaveAIProfile(profile);
@@ -222,7 +222,7 @@ const App: React.FC = () => {
           />
         )}
         {view === AppStep.STUDIO && (
-          <Studio 
+          <Studio
             people={state.people}
             products={state.products}
             onUpdatePeople={handleUpdatePeople}
@@ -238,12 +238,11 @@ const App: React.FC = () => {
 const NavButton: React.FC<{ active: boolean; onClick: () => void; icon: any; label: string }> = ({ active, onClick, icon: Icon, label }) => (
   <button
     onClick={onClick}
-    className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${
-      active ? 'bg-gray-800 text-white shadow-sm' : 'text-gray-400 hover:text-white hover:bg-gray-800/50'
-    }`}
+    className={`flex items-center gap-1.5 sm:gap-2 px-3 py-2 sm:px-4 rounded-md text-xs sm:text-sm font-medium transition-all ${active ? 'bg-gray-800 text-white shadow-sm' : 'text-gray-400 hover:text-white hover:bg-gray-800/50'
+      }`}
   >
-    <Icon size={16} />
-    {label}
+    <Icon size={16} className="sm:w-5 sm:h-5" />
+    <span className="hidden xs:inline sm:inline">{label}</span>
   </button>
 );
 

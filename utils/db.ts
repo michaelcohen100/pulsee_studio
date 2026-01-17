@@ -1,18 +1,13 @@
 
+import * as supabaseService from '../lib/supabase';
+import { EntityProfile, GeneratedImage } from '../types';
+
 export const DB_NAME = 'GeminiBrandStudioDB';
 export const DB_VERSION = 1;
 
-export interface DBProfile {
-  id: string;
-  type: 'PERSON' | 'PRODUCT';
-  data: any; // EntityProfile
-}
-
-export interface DBImage {
-  id: string;
-  timestamp: number;
-  data: any; // GeneratedImage
-}
+// ============================================
+// INDEXEDDB IMPLEMENTATION (Fallback)
+// ============================================
 
 class LocalDB {
   private db: IDBDatabase | null = null;
@@ -32,13 +27,11 @@ class LocalDB {
 
       request.onupgradeneeded = (event) => {
         const db = (event.target as IDBOpenDBRequest).result;
-        
-        // Store for User and Products
+
         if (!db.objectStoreNames.contains('profiles')) {
           db.createObjectStore('profiles', { keyPath: 'id' });
         }
-        
-        // Store for Generated Gallery
+
         if (!db.objectStoreNames.contains('gallery')) {
           const store = db.createObjectStore('gallery', { keyPath: 'id' });
           store.createIndex('timestamp', 'timestamp', { unique: false });
@@ -57,7 +50,7 @@ class LocalDB {
     });
   }
 
-  async saveProfile(profile: any) {
+  async saveProfile(profile: EntityProfile) {
     if (!this.isSupported()) return;
     try {
       const db = await this.connect();
@@ -65,7 +58,7 @@ class LocalDB {
         const tx = db.transaction('profiles', 'readwrite');
         const store = tx.objectStore('profiles');
         const request = store.put({ id: profile.id, type: profile.type, data: profile });
-        
+
         request.onsuccess = () => resolve();
         request.onerror = () => reject(request.error);
       });
@@ -74,7 +67,7 @@ class LocalDB {
     }
   }
 
-  async getProfiles(): Promise<any[]> {
+  async getProfiles(): Promise<EntityProfile[]> {
     if (!this.isSupported()) return [];
     try {
       const db = await this.connect();
@@ -82,9 +75,9 @@ class LocalDB {
         const tx = db.transaction('profiles', 'readonly');
         const store = tx.objectStore('profiles');
         const request = store.getAll();
-        
+
         request.onsuccess = () => {
-          const results = request.result.map((item: any) => item.data);
+          const results = request.result.map((item: { data: EntityProfile }) => item.data);
           resolve(results);
         };
         request.onerror = () => reject(request.error);
@@ -103,7 +96,7 @@ class LocalDB {
         const tx = db.transaction('profiles', 'readwrite');
         const store = tx.objectStore('profiles');
         const request = store.delete(id);
-        
+
         request.onsuccess = () => resolve();
         request.onerror = () => reject(request.error);
       });
@@ -112,7 +105,7 @@ class LocalDB {
     }
   }
 
-  async saveImage(image: any) {
+  async saveImage(image: GeneratedImage) {
     if (!this.isSupported()) return;
     try {
       const db = await this.connect();
@@ -120,7 +113,7 @@ class LocalDB {
         const tx = db.transaction('gallery', 'readwrite');
         const store = tx.objectStore('gallery');
         const request = store.put({ id: image.id, timestamp: image.timestamp, data: image });
-        
+
         request.onsuccess = () => resolve();
         request.onerror = () => reject(request.error);
       });
@@ -129,7 +122,7 @@ class LocalDB {
     }
   }
 
-  async getGallery(): Promise<any[]> {
+  async getGallery(): Promise<GeneratedImage[]> {
     if (!this.isSupported()) return [];
     try {
       const db = await this.connect();
@@ -138,7 +131,7 @@ class LocalDB {
         const store = tx.objectStore('gallery');
         const index = store.index('timestamp');
         const request = index.openCursor(null, 'prev');
-        const results: any[] = [];
+        const results: GeneratedImage[] = [];
 
         request.onsuccess = (event) => {
           const cursor = (event.target as IDBRequest).result;
@@ -157,9 +150,88 @@ class LocalDB {
     }
   }
 
-  async updateImage(image: any) {
-      return this.saveImage(image);
+  async updateImage(image: GeneratedImage) {
+    return this.saveImage(image);
   }
 }
 
-export const db = new LocalDB();
+const localDB = new LocalDB();
+
+// ============================================
+// UNIFIED DB INTERFACE (Supabase + Fallback)
+// ============================================
+
+class UnifiedDB {
+  private useSupabase: boolean;
+
+  constructor() {
+    this.useSupabase = supabaseService.isSupabaseConfigured();
+    console.log(`📦 Storage: ${this.useSupabase ? 'Supabase (cloud)' : 'IndexedDB (local)'}`);
+  }
+
+  async getProfiles(): Promise<EntityProfile[]> {
+    if (this.useSupabase) {
+      try {
+        return await supabaseService.getProfiles();
+      } catch (e) {
+        console.warn('Supabase failed, falling back to IndexedDB', e);
+        return localDB.getProfiles();
+      }
+    }
+    return localDB.getProfiles();
+  }
+
+  async saveProfile(profile: EntityProfile): Promise<void> {
+    if (this.useSupabase) {
+      try {
+        await supabaseService.saveProfile(profile);
+        return;
+      } catch (e) {
+        console.warn('Supabase save failed, falling back to IndexedDB', e);
+      }
+    }
+    await localDB.saveProfile(profile);
+  }
+
+  async deleteProfile(id: string): Promise<void> {
+    if (this.useSupabase) {
+      try {
+        await supabaseService.deleteProfile(id);
+        return;
+      } catch (e) {
+        console.warn('Supabase delete failed, falling back to IndexedDB', e);
+      }
+    }
+    await localDB.deleteProfile(id);
+  }
+
+  async getGallery(): Promise<GeneratedImage[]> {
+    if (this.useSupabase) {
+      try {
+        return await supabaseService.getGallery();
+      } catch (e) {
+        console.warn('Supabase failed, falling back to IndexedDB', e);
+        return localDB.getGallery();
+      }
+    }
+    return localDB.getGallery();
+  }
+
+  async saveImage(image: GeneratedImage): Promise<void> {
+    if (this.useSupabase) {
+      try {
+        await supabaseService.saveImage(image);
+        return;
+      } catch (e) {
+        console.warn('Supabase save failed, falling back to IndexedDB', e);
+      }
+    }
+    await localDB.saveImage(image);
+  }
+
+  async updateImage(image: GeneratedImage): Promise<void> {
+    return this.saveImage(image);
+  }
+}
+
+export const db = new UnifiedDB();
