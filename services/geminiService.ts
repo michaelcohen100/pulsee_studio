@@ -466,6 +466,7 @@ export const generateBrandVisual = async (
     injectPulseeBranding?: boolean;
     prioritizeProductFidelity?: boolean;
     ultraRealistic?: boolean;
+    isPackshot?: boolean;
   } = {}
 ): Promise<string> => {
 
@@ -475,7 +476,8 @@ export const generateBrandVisual = async (
   const {
     injectPulseeBranding = true,
     prioritizeProductFidelity = true,
-    ultraRealistic = false
+    ultraRealistic = false,
+    isPackshot = false
   } = options;
 
   const ai = new GoogleGenAI({ apiKey });
@@ -581,6 +583,15 @@ export const generateBrandVisual = async (
       if (scaleInstructions) {
         promptBuilder += `SCALE & PROPORTIONS (CRITICAL):\n${scaleInstructions}\n`;
       }
+    }
+
+    // PACKSHOT MODE INSTRUCTIONS
+    if (isPackshot) {
+      promptBuilder += `\nMODE: PRODUCT PACKSHOT (STRICT)\n`;
+      promptBuilder += `CRITICAL: The image must ONLY contain the product(s). NO PEOPLE. NO HANDS. NO HUMAN PRESENCE.\n`;
+      promptBuilder += `COMPOSITION: Centered product composition, commercial advertising style.\n`;
+      promptBuilder += `BACKGROUND: Clean, high-quality professional background as described, or studio abstract.\n`;
+      promptBuilder += `FOCUS: Sharp focus on the entire product. 100% clarity on labels.\n`;
     }
 
     // Apprentissage des préférences
