@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
 import { EntityProfile, GenerationMode, ExportFormat } from "../types";
 
@@ -11,8 +10,47 @@ const getApiKey = () => {
   }
 };
 
-const apiKey = getApiKey();
-const ai = new GoogleGenAI({ apiKey: apiKey || 'dummy' });
+/**
+ * Utility: Downscales a base64 string to a maximum dimension on the fly.
+ * This ensures that even large uploaded photos are lightweight when sent to the API.
+ */
+const optimizeImageForAPI = async (base64Str: string, maxDimension = 512, quality = 0.6): Promise<string> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      let width = img.width;
+      let height = img.height;
+
+      // Keep aspect ratio but reduce size
+      if (width > height) {
+        if (width > maxDimension) {
+          height *= maxDimension / width;
+          width = maxDimension;
+        }
+      } else {
+        if (height > maxDimension) {
+          width *= maxDimension / height;
+          height = maxDimension;
+        }
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, width, height);
+      }
+      
+      // Return bare base64 without prefix if needed, but usually kept for standard
+      const dataUrl = canvas.toDataURL('image/jpeg', quality); 
+      resolve(dataUrl.split(',')[1]); // Return clean Base64
+    };
+    img.src = base64Str.includes(',') ? base64Str : `data:image/jpeg;base64,${base64Str}`;
+  });
+};
 
 /**
  * Wraps a promise with a timeout to prevent infinite hanging.
@@ -57,19 +95,29 @@ export const analyzeImageForTraining = async (
   base64Images: string[],
   subjectType: 'PERSON' | 'PRODUCT'
 ): Promise<string> => {
+  const apiKey = getApiKey();
   if (!apiKey) throw new Error("API Key manquante. Vérifiez votre configuration (.env).");
   
+  const ai = new GoogleGenAI({ apiKey });
+
   try {
     const prompt = subjectType === 'PERSON' 
       ? "You are a casting director. Describe the person in these photos in extreme detail. Focus on facial structure, eye color, hair texture, age, and skin tone. Be objective and precise."
       : "You are a 3D Product Modeler. Describe this object's geometry, materials, textures, label details, reflection properties, and colors in extreme detail so it can be recreated digitally.";
 
-    const parts = base64Images.slice(0, 3).map(img => ({
+    // Optimize images before analysis too
+    // For products in analysis, we can stick to 512px as we just need general description, not text reading per se, 
+    // but let's bump it slightly for better label reading during analysis.
+    const analysisSize = subjectType === 'PRODUCT' ? 800 : 512;
+    
+    const optimizedPartsPromises = base64Images.slice(0, 2).map(async (img) => ({
       inlineData: {
         mimeType: 'image/jpeg',
-        data: img.includes(',') ? img.split(',')[1] : img
+        data: await optimizeImageForAPI(img, analysisSize, 0.7)
       }
     }));
+    
+    const parts = await Promise.all(optimizedPartsPromises);
 
     const response = await callWithTimeout<GenerateContentResponse>(ai.models.generateContent({
       model: 'gemini-2.5-flash',
@@ -92,7 +140,10 @@ export const analyzeImageForTraining = async (
  * Generates a detailed description for an AI Persona based on a short idea.
  */
 export const generateAIModelDescription = async (idea: string): Promise<string> => {
+  const apiKey = getApiKey();
   if (!apiKey) throw new Error("API Key manquante.");
+  const ai = new GoogleGenAI({ apiKey });
+
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
@@ -110,7 +161,9 @@ export const generateAIModelDescription = async (idea: string): Promise<string> 
  * Generates reference images for an AI Persona with specific angles and expressions.
  */
 export const generateAIModelImages = async (description: string): Promise<string[]> => {
+  const apiKey = getApiKey();
   if (!apiKey) throw new Error("API Key manquante.");
+  const ai = new GoogleGenAI({ apiKey });
 
   const masterPrompt = `Generate a photorealistic ID photo of the following character: ${description}. 
   Shot: Extreme close-up portrait, facing camera directly. Neutral expression. 
@@ -121,8 +174,10 @@ export const generateAIModelImages = async (description: string): Promise<string
     
     if (referenceImage) {
       const base64Data = referenceImage.includes(',') ? referenceImage.split(',')[1] : referenceImage;
+      // AI Generated images are usually okay, but let's optimize them just in case
+      const optimized = await optimizeImageForAPI(base64Data, 512);
       parts.push({
-        inlineData: { mimeType: 'image/png', data: base64Data }
+        inlineData: { mimeType: 'image/jpeg', data: optimized }
       });
       parts.push({ text: `Reference Image: Use this face as the strict identity reference for the character.` });
     }
@@ -183,54 +238,58 @@ export const generateBrandVisual = async (
   likedPrompts: string[] = []
 ): Promise<string> => {
   
+  const apiKey = getApiKey();
   if (!apiKey) throw new Error("API Key manquant (Check .env)");
+  const ai = new GoogleGenAI({ apiKey });
 
   const performGeneration = async () => {
     const imageParts: any[] = [];
     let promptBuilder = "";
     let scaleInstructions = "";
 
-    // IMPORTANT: Products FIRST for higher fidelity on text/logos
-    const maxTotalImages = 4;
-    let currentImageCount = 0;
+    // STRICT LIMIT: Only take 1 product image and 1 person image max to prevent payload explosion
+    // This is the "Eco-mode" fix for custom uploads
+    const maxProductRefs = 1;
+    const maxPersonRefs = 1;
+
+    let productCount = 0;
+    let personCount = 0;
 
     // 1. Process Products (Priority)
-    products.forEach((product, idx) => {
-      if (currentImageCount >= maxTotalImages) return;
+    for (const product of products) {
+      if (productCount >= maxProductRefs) break;
       if (product.images.length > 0) {
-        const rawProd = product.images[0];
-        const base64Prod = rawProd.includes(',') ? rawProd.split(',')[1] : rawProd;
-        if (base64Prod) {
-          imageParts.push({
-            inlineData: { mimeType: 'image/jpeg', data: base64Prod }
-          });
-          promptBuilder += `[Reference Image ${currentImageCount + 1}: PRODUCT (${product.name}) - CRITICAL: KEEP LOGO AND TEXT IDENTICAL]. `;
-          if (product.dimensions) {
-             scaleInstructions += `- PRODUCT "${product.name}" DIMENSIONS: ${product.dimensions}.\n`;
-          }
-          currentImageCount++;
+        // SMART HD: Use 1280px and High Quality (0.9) for products to keep logo/text sharp
+        const optimized = await optimizeImageForAPI(product.images[0], 1280, 0.9);
+        
+        imageParts.push({
+          inlineData: { mimeType: 'image/jpeg', data: optimized }
+        });
+        promptBuilder += `[Reference Image ${imageParts.length}: PRODUCT (${product.name}) - CRITICAL: KEEP LOGO AND TEXT IDENTICAL]. `;
+        if (product.dimensions) {
+            scaleInstructions += `- PRODUCT "${product.name}" DIMENSIONS: ${product.dimensions}.\n`;
         }
+        productCount++;
       }
-    });
+    }
 
     // 2. Process People
-    selectedPeople.forEach((p, idx) => {
-      if (currentImageCount >= maxTotalImages) return;
+    for (const p of selectedPeople) {
+      if (personCount >= maxPersonRefs) break;
       if (p.images.length > 0) {
-        const rawPerson = p.images[0];
-        const base64Person = rawPerson.includes(',') ? rawPerson.split(',')[1] : rawPerson;
-        if (base64Person) {
-          imageParts.push({
-            inlineData: { mimeType: 'image/jpeg', data: base64Person }
-          });
-          promptBuilder += `[Reference Image ${currentImageCount + 1}: SUBJECT PERSON (${p.name})]. `;
-          if (p.dimensions) {
-             scaleInstructions += `- SUBJECT "${p.name}" HEIGHT/SIZE: ${p.dimensions}.\n`;
-          }
-          currentImageCount++;
+        // ECO MODE: Keep people at 600px/0.6q. Faces are easier for AI to reconstruct than logos.
+        const optimized = await optimizeImageForAPI(p.images[0], 600, 0.6);
+        
+        imageParts.push({
+          inlineData: { mimeType: 'image/jpeg', data: optimized }
+        });
+        promptBuilder += `[Reference Image ${imageParts.length}: SUBJECT PERSON (${p.name})]. `;
+        if (p.dimensions) {
+            scaleInstructions += `- SUBJECT "${p.name}" HEIGHT/SIZE: ${p.dimensions}.\n`;
         }
+        personCount++;
       }
-    });
+    }
 
     // 3. Prompt Engineering
     promptBuilder += `\n\nROLE: Professional Commercial Photographer & Digital Artist.`;
@@ -248,7 +307,6 @@ export const generateBrandVisual = async (
          promptBuilder += `\n\nSCALE & PROPORTIONS (CRITICAL):`;
          promptBuilder += `\nYou MUST respect the following real-world dimensions:`;
          promptBuilder += `\n${scaleInstructions}`;
-         promptBuilder += `\n- Ensure small objects look small in hands, and large objects look large.`;
       }
     } else {
       promptBuilder += `\n\nINSTRUCTIONS: Generate a high quality image based solely on the textual description.`;
@@ -260,6 +318,7 @@ export const generateBrandVisual = async (
       { text: promptBuilder }
     ];
 
+    // Increased timeout slightly to account for the resizing operations
     const response = await callWithTimeout<GenerateContentResponse>(ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
       contents: {
@@ -270,11 +329,10 @@ export const generateBrandVisual = async (
           aspectRatio: "1:1"
         }
       }
-    }), 90000); // 90 seconds max per image
+    }), 90000); 
 
     const candidate = response.candidates?.[0];
     
-    // Safety Check
     if (candidate?.finishReason && candidate.finishReason !== 'STOP') {
        throw new Error(`Sécurité : L'IA a bloqué l'image (Raison: ${candidate.finishReason}). Simplifiez le prompt ou changez de sujet.`);
     }
@@ -301,18 +359,21 @@ export const repairProductIdentity = async (
   generatedImageUrl: string,
   originalProductUrl: string
 ): Promise<string> => {
+  const apiKey = getApiKey();
   if (!apiKey) throw new Error("API Key manquant");
+  const ai = new GoogleGenAI({ apiKey });
 
   const performRepair = async () => {
-    const generatedBase64 = generatedImageUrl.includes(',') ? generatedImageUrl.split(',')[1] : generatedImageUrl;
-    const productBase64 = originalProductUrl.includes(',') ? originalProductUrl.split(',')[1] : originalProductUrl;
+    // Optimize inputs to prevent failure, BUT keep product high res for repair
+    const generatedOptimized = await optimizeImageForAPI(generatedImageUrl, 1024, 0.85);
+    const productOptimized = await optimizeImageForAPI(originalProductUrl, 1280, 0.95); // Max fidelity
 
     const parts = [
       {
-        inlineData: { mimeType: 'image/png', data: generatedBase64 }
+        inlineData: { mimeType: 'image/jpeg', data: generatedOptimized }
       },
       {
-        inlineData: { mimeType: 'image/jpeg', data: productBase64 }
+        inlineData: { mimeType: 'image/jpeg', data: productOptimized }
       },
       { 
         text: `ROLE: Expert Photo Retoucher.
@@ -353,14 +414,17 @@ export const editGeneratedVisual = async (
   originalImageUrl: string,
   instruction: string
 ): Promise<string> => {
+  const apiKey = getApiKey();
   if (!apiKey) throw new Error("API Key manquant");
+  const ai = new GoogleGenAI({ apiKey });
 
   const performEdit = async () => {
-    const base64Data = originalImageUrl.includes(',') ? originalImageUrl.split(',')[1] : originalImageUrl;
+    // Optimize input
+    const optimized = await optimizeImageForAPI(originalImageUrl, 800, 0.8);
     
     const parts = [
       {
-        inlineData: { mimeType: 'image/png', data: base64Data }
+        inlineData: { mimeType: 'image/jpeg', data: optimized }
       },
       { text: `ROLE: Expert Photo Retoucher.\nTASK: Edit this image. ${instruction}\nCONSTRAINT: Maintain the identity of the person and the look of the product exactly. Only modify what is requested.` }
     ];
@@ -391,14 +455,17 @@ export const expandImageForFormat = async (
   originalImageUrl: string,
   format: ExportFormat
 ): Promise<string> => {
+  const apiKey = getApiKey();
   if (!apiKey) throw new Error("API Key manquant");
+  const ai = new GoogleGenAI({ apiKey });
 
   const performExpansion = async () => {
-    const base64Data = originalImageUrl.includes(',') ? originalImageUrl.split(',')[1] : originalImageUrl;
+    // Optimize input
+    const optimized = await optimizeImageForAPI(originalImageUrl, 800, 0.8);
     
     const parts = [
       {
-        inlineData: { mimeType: 'image/png', data: base64Data }
+        inlineData: { mimeType: 'image/jpeg', data: optimized }
       },
       { text: `ROLE: Digital Artist.\nTASK: Expand the canvas of this image to fit a ${format} aspect ratio for social media use.\nINSTRUCTION: Seamlessly extend the background. Do NOT distort or crop the central subject/product. Keep the style consistent.` }
     ];
@@ -423,6 +490,10 @@ export const expandImageForFormat = async (
 };
 
 export const refinePrompt = async (roughIdea: string, context?: string): Promise<string> => {
+  const apiKey = getApiKey();
+  if (!apiKey) return roughIdea;
+  const ai = new GoogleGenAI({ apiKey });
+
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
@@ -454,6 +525,10 @@ export const suggestPrompts = async (
   userDesc: string,
   productDesc: string
 ): Promise<string[]> => {
+  const apiKey = getApiKey();
+  if (!apiKey) return [];
+  const ai = new GoogleGenAI({ apiKey });
+
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',

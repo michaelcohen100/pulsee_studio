@@ -7,6 +7,7 @@ interface ImageUploaderProps {
   images: string[];
   onImagesChange: (images: string[]) => void;
   maxImages?: number;
+  mode?: 'PERSON' | 'PRODUCT'; // Nouveau prop pour différencier la qualité
 }
 
 export const ImageUploader: React.FC<ImageUploaderProps> = ({
@@ -14,10 +15,13 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
   description,
   images,
   onImagesChange,
-  maxImages = 20 // Default to 20 as requested
+  maxImages = 20,
+  mode = 'PERSON' // Par défaut
 }) => {
   
-  // Utility to resize and compress images to avoid storage overflow
+  // STRATÉGIE HYBRIDE : 
+  // Personne = Optimisation forte (600px) pour éviter les crashs.
+  // Produit = Haute Fidélité (1280px) pour garder le texte et les logos nets.
   const processFile = (file: File): Promise<string> => {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -27,7 +31,10 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
           const canvas = document.createElement('canvas');
           let width = img.width;
           let height = img.height;
-          const MAX_SIZE = 800; // Resize to manageable size for Gemini & Storage
+          
+          // Configuration dynamique selon le mode
+          const MAX_SIZE = mode === 'PRODUCT' ? 1280 : 600; 
+          const QUALITY = mode === 'PRODUCT' ? 0.90 : 0.60;
 
           if (width > height) {
             if (width > MAX_SIZE) {
@@ -44,9 +51,14 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
           canvas.width = width;
           canvas.height = height;
           const ctx = canvas.getContext('2d');
-          ctx?.drawImage(img, 0, 0, width, height);
-          // Compress to JPEG 70% quality
-          resolve(canvas.toDataURL('image/jpeg', 0.7));
+          // Meilleur algorithme de lissage pour les produits
+          if (ctx) {
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            ctx.drawImage(img, 0, 0, width, height);
+          }
+          
+          resolve(canvas.toDataURL('image/jpeg', QUALITY));
         };
         img.src = e.target?.result as string;
       };

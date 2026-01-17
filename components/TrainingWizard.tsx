@@ -94,6 +94,7 @@ export const TrainingWizard: React.FC<TrainingWizardProps> = ({ onComplete }) =>
               images={data.userImages || []}
               onImagesChange={imgs => setData({...data, userImages: imgs})}
               maxImages={20}
+              mode="PERSON"
             />
           </div>
         ) : (
@@ -120,6 +121,7 @@ export const TrainingWizard: React.FC<TrainingWizardProps> = ({ onComplete }) =>
               images={data.productImages || []}
               onImagesChange={imgs => setData({...data, productImages: imgs})}
               maxImages={20}
+              mode="PRODUCT"
             />
           </div>
         )}

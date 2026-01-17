@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { EntityProfile } from '../types';
 import { ImageUploader } from './ImageUploader';
@@ -179,6 +178,7 @@ export const Studio: React.FC<StudioProps> = ({ people, products, onUpdatePeople
               images={editImages}
               onImagesChange={setEditImages}
               maxImages={20}
+              mode={type} // CRUCIAL: Passe le mode pour la qualité HD
             />
           </div>
 
