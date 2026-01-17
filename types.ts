@@ -1,4 +1,3 @@
-
 export enum AppStep {
   ONBOARDING = 'ONBOARDING',
   DASHBOARD = 'DASHBOARD',
@@ -14,7 +13,9 @@ export interface EntityProfile {
   images: string[]; // Base64
   type: 'PERSON' | 'PRODUCT';
   isAI?: boolean; // Flag to identify generated personas
-  dimensions?: string; // New field: Height (cm) for people, Dimensions (L x W x H) for products
+  dimensions?: string; // Height (cm) for people, Dimensions (L x W x H) for products
+  createdAt?: number;
+  updatedAt?: number;
 }
 
 export interface AppState {
@@ -22,6 +23,7 @@ export interface AppState {
   products: EntityProfile[];
   gallery: GeneratedImage[];
   likedPrompts: string[]; // "Memory" of what the user likes
+  favoritePrompts?: SavedPrompt[]; // User-saved prompts
 }
 
 export enum GenerationMode {
@@ -41,6 +43,15 @@ export interface GeneratedImage {
   timestamp: number;
   feedback?: 'like' | 'dislike';
   parentId?: string; // If derived from another image (edit/export)
+  generationTime?: number; // Time taken to generate (ms)
+  metadata?: GenerationMetadata;
+}
+
+export interface GenerationMetadata {
+  modelVersion?: string;
+  promptTokens?: number;
+  retryCount?: number;
+  optimizationPreset?: string;
 }
 
 export interface TrainingData {
@@ -58,7 +69,165 @@ export interface ArtStyle {
   promptModifier: string;
   icon: string; // Emoji or icon name
   color: string;
+  category?: 'studio' | 'mood' | 'artistic' | 'brand';
 }
 
 export type EditorTab = 'details' | 'edit' | 'export' | 'repair';
-export type ExportFormat = '9:16' | '16:9';
+export type ExportFormat = '9:16' | '16:9' | '1:1' | '4:5';
+
+// ============================================
+// QUEUE & BATCH GENERATION TYPES
+// ============================================
+
+export type QueueItemStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
+
+export interface BatchGenerationConfig {
+  variationCount: number;
+  prompt: string;
+  styleId: string;
+  selectedPeopleIds: string[];
+  selectedProductIds: string[];
+  options?: {
+    injectPulseeBranding?: boolean;
+    prioritizeProductFidelity?: boolean;
+    stopOnConsecutiveFailures?: number;
+  };
+}
+
+export interface BatchGenerationProgress {
+  total: number;
+  completed: number;
+  failed: number;
+  cancelled: number;
+  currentIndex: number;
+  currentStatus: string;
+  isRunning: boolean;
+  canCancel: boolean;
+  estimatedTimeRemaining?: number; // seconds
+  errors: string[];
+}
+
+export interface BatchGenerationResult {
+  success: boolean;
+  totalGenerated: number;
+  totalFailed: number;
+  images: GeneratedImage[];
+  errors: string[];
+  totalTime: number; // ms
+}
+
+// ============================================
+// SAVED PROMPTS & FAVORITES
+// ============================================
+
+export interface SavedPrompt {
+  id: string;
+  name: string;
+  prompt: string;
+  styleId?: string;
+  tags?: string[];
+  usageCount: number;
+  createdAt: number;
+  lastUsedAt?: number;
+}
+
+export interface PromptTemplate {
+  id: string;
+  name: string;
+  category: 'pulsee' | 'product' | 'lifestyle' | 'creative' | 'custom';
+  template: string; // With placeholders like {{PRODUCT_NAME}}, {{PERSON_NAME}}
+  description: string;
+  exampleOutput?: string;
+}
+
+// ============================================
+// UI STATE TYPES
+// ============================================
+
+export interface LightboxState {
+  isOpen: boolean;
+  image: GeneratedImage | null;
+  activeTab: EditorTab;
+}
+
+export interface ComparisonState {
+  isActive: boolean;
+  selectedIds: string[];
+  isModalOpen: boolean;
+}
+
+export interface NotificationMessage {
+  id: string;
+  type: 'success' | 'error' | 'warning' | 'info';
+  title: string;
+  message: string;
+  duration?: number; // ms, 0 = persistent
+  action?: {
+    label: string;
+    onClick: () => void;
+  };
+}
+
+// ============================================
+// ANALYTICS & TRACKING (Optional)
+// ============================================
+
+export interface GenerationStats {
+  totalGenerations: number;
+  successRate: number; // 0-1
+  averageGenerationTime: number; // ms
+  mostUsedStyle: string;
+  mostUsedPromptKeywords: string[];
+  generationsByDay: Record<string, number>;
+}
+
+// ============================================
+// PULSEE BRAND SPECIFIC
+// ============================================
+
+export interface PulseeBrandConfig {
+  colors: {
+    primary: string;
+    secondary: string;
+    accent: string;
+    white: string;
+  };
+  visualKeywords: string[];
+  productInfo: {
+    name: string;
+    tagline: string;
+    description: string;
+  };
+  targetAudiences: string[];
+}
+
+export const PULSEE_BRAND_CONFIG: PulseeBrandConfig = {
+  colors: {
+    primary: '#0A1628',
+    secondary: '#1A2744',
+    accent: '#00D4FF',
+    white: '#FFFFFF'
+  },
+  visualKeywords: [
+    'deep navy blue',
+    'electric cyan accents',
+    'cold icy atmosphere',
+    'premium pharmaceutical aesthetic',
+    'lightning energy effects',
+    'modern professional',
+    'high contrast'
+  ],
+  productInfo: {
+    name: 'Pulsee Booster',
+    tagline: "L'innovation qui redéfinit la vigilance",
+    description: '15ml dark glass dropper bottle, navy blue label, PULSEE BOOSTER text, lightning bolt logo'
+  },
+  targetAudiences: [
+    'entrepreneurs',
+    'athletes',
+    'students',
+    'gamers',
+    'tired parents',
+    'travelers'
+  ]
+};
