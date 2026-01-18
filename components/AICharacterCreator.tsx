@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { generateAIModelDescription, generateAIModelImages } from '../services/geminiService';
-import { Button } from './Button';
+import { Button } from './common/Button';
 import { EntityProfile, AIModelTemplate } from '../types';
 import { Sparkles, Save, RefreshCw, User, ArrowLeft, Camera, Ruler, ChevronDown, Wand2 } from 'lucide-react';
 import { AI_MODEL_TEMPLATES } from '../data/personas';

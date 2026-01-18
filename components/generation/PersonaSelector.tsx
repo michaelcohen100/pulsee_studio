@@ -1,6 +1,6 @@
 import React from 'react';
-import { MarketingPersona } from '../types';
-import { MARKETING_PERSONAS } from '../data/personas';
+import { MarketingPersona } from '../../types';
+import { MARKETING_PERSONAS } from '../../data/personas';
 import { Users, Sparkles } from 'lucide-react';
 
 interface PersonaSelectorProps {
@@ -41,8 +41,8 @@ export const PersonaSelector: React.FC<PersonaSelectorProps> = ({
                             key={persona.id}
                             onClick={() => onSelectPersona(isSelected ? null : persona)}
                             className={`relative p-3 rounded-lg border text-left transition-all overflow-hidden group ${isSelected
-                                    ? 'border-purple-500 ring-1 ring-purple-500/50 bg-purple-900/20'
-                                    : 'border-gray-800 bg-gray-900 hover:border-gray-700 hover:bg-gray-800/50'
+                                ? 'border-purple-500 ring-1 ring-purple-500/50 bg-purple-900/20'
+                                : 'border-gray-800 bg-gray-900 hover:border-gray-700 hover:bg-gray-800/50'
                                 }`}
                         >
                             {/* Gradient background */}

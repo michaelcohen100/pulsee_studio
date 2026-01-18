@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
-import { EntityProfile, GenerationMode, ExportFormat } from "../types";
+import { EntityProfile, GenerationMode, ExportFormat, CreativeConcept, MarketingPersona } from "../types";
 import { descriptionCache } from "../utils/generationQueue";
 
 // Safe API Key access
@@ -117,6 +117,9 @@ export const ImageOptimizationPresets = {
 
   // Pour les produits - haute fidélité pour préserver texte/logos
   PRODUCT: { maxDimension: 1280, quality: 0.9 },
+
+  // Pour les lieux/décors - haute résolution pour les détails
+  LOCATION: { maxDimension: 1024, quality: 0.85 },
 
   // Pour l'édition - équilibré
   EDIT: { maxDimension: 1024, quality: 0.8 },
@@ -248,7 +251,7 @@ const humanizeError = (error: any): string => {
  */
 export const analyzeImageForTraining = async (
   base64Images: string[],
-  subjectType: 'PERSON' | 'PRODUCT'
+  subjectType: 'PERSON' | 'PRODUCT' | 'LOCATION'
 ): Promise<string> => {
   const apiKey = getApiKey();
   if (!apiKey) throw new Error("Clé API manquante. Vérifiez votre fichier .env");
@@ -264,15 +267,25 @@ export const analyzeImageForTraining = async (
   const preset = ImageOptimizationPresets.ANALYSIS;
 
   const performAnalysis = async (): Promise<string> => {
-    const prompt = subjectType === 'PERSON'
-      ? `You are an expert casting director. Analyze these photos and create an extremely detailed physical description.
+    let prompt = '';
+
+    if (subjectType === 'PERSON') {
+      prompt = `You are an expert casting director. Analyze these photos and create an extremely detailed physical description.
          Include: facial structure, eye color and shape, hair (color, texture, style), estimated age, skin tone and texture,
          body type if visible, distinctive features, typical expressions.
-         Be objective, precise, and thorough. This description will be used for AI image generation.`
-      : `You are an expert 3D product modeler. Analyze this product and create an extremely detailed technical description.
+         Be objective, precise, and thorough. This description will be used for AI image generation.`;
+    } else if (subjectType === 'PRODUCT') {
+      prompt = `You are an expert 3D product modeler. Analyze this product and create an extremely detailed technical description.
          Include: exact geometry and dimensions, materials and textures, all label text (VERBATIM - copy exactly),
          logo placement and design, color codes, reflection properties, surface finish.
          CRITICAL: Copy ALL text on the label exactly as written. This is essential for accurate reproduction.`;
+    } else if (subjectType === 'LOCATION') {
+      prompt = `You are an expert set designer and photographer. Analyze this location/background and create an extremely detailed description.
+         Include: overall atmosphere and mood, lighting conditions (natural/artificial, direction, color temperature),
+         architectural elements and materials, key objects and furniture, color palette, textures and surfaces,
+         spatial depth and composition, notable details that define the ambiance.
+         This description will be used to recreate this location as a background for AI image generation.`;
+    }
 
     // Optimiser les images avant envoi
     const optimizedImages = await Promise.all(
@@ -467,6 +480,8 @@ export const generateBrandVisual = async (
     prioritizeProductFidelity?: boolean;
     ultraRealistic?: boolean;
     isPackshot?: boolean;
+    location?: EntityProfile; // NEW: Location/background reference
+    inspirationImages?: string[]; // NEW: Style/Mood inspiration
   } = {}
 ): Promise<string> => {
 
@@ -477,7 +492,9 @@ export const generateBrandVisual = async (
     injectPulseeBranding = true,
     prioritizeProductFidelity = true,
     ultraRealistic = false,
-    isPackshot = false
+    isPackshot = false,
+    location = undefined,
+    inspirationImages = []
   } = options;
 
   const ai = new GoogleGenAI({ apiKey });
@@ -544,7 +561,49 @@ export const generateBrandVisual = async (
       }
     }
 
-    // === 3. CONSTRUCTION DU PROMPT PRINCIPAL ===
+    // === 3. TRAITEMENT DU LIEU/DÉCOR (BACKGROUND) ===
+    if (location && location.images.length > 0) {
+      const locationPreset = ImageOptimizationPresets.LOCATION;
+      const optimized = await optimizeImageForAPI(
+        location.images[0],
+        locationPreset.maxDimension,
+        locationPreset.quality
+      );
+
+      referenceCount++;
+      imageParts.push({
+        inlineData: { mimeType: 'image/jpeg', data: optimized }
+      });
+
+      promptBuilder += `[REFERENCE IMAGE ${referenceCount}: BACKGROUND/LOCATION "${location.name}"]\n`;
+      promptBuilder += `CRITICAL BACKGROUND INSTRUCTIONS:\n`;
+      promptBuilder += `- This image must be used as the EXACT BACKGROUND/SETTING for the final image\n`;
+      promptBuilder += `- Reproduce the environment, lighting, colors, and atmosphere from this reference\n`;
+      promptBuilder += `- The scene takes place IN this location - it is not just inspiration, it IS the background\n`;
+      promptBuilder += `- Location description: ${location.description}\n\n`;
+    }
+
+
+    // === 3.5 TRAITEMENT DES INSPIRATIONS ===
+    if (inspirationImages && inspirationImages.length > 0) {
+      for (const base64 of inspirationImages) {
+        // Optimization for inspiration images
+        const optimized = await optimizeImageForAPI(base64, 1024, 0.85);
+
+        referenceCount++;
+        imageParts.push({
+          inlineData: { mimeType: 'image/jpeg', data: optimized }
+        });
+
+        promptBuilder += `[REFERENCE IMAGE ${referenceCount}: STYLE & MOOD INSPIRATION]\n`;
+      }
+
+      promptBuilder += `INSPIRATION INSTRUCTIONS:\n`;
+      promptBuilder += `- Use the visual style, lighting, and mood from the INSPIRATION images above.\n`;
+      promptBuilder += `- Apply this style to the subject (Person/Product) defined earlier.\n\n`;
+    }
+
+    // === 4. CONSTRUCTION DU PROMPT PRINCIPAL ===
     promptBuilder += `\n========================================\n`;
     promptBuilder += `ROLE: World-class Commercial Photographer & Digital Artist\n`;
 
@@ -605,6 +664,14 @@ export const generateBrandVisual = async (
       promptBuilder += `\nMODE: PORTRAIT / CHARACTER ONLY\n`;
       promptBuilder += `CRITICAL: The character is NOT holding anything. EMPTY HANDS.\n`;
       promptBuilder += `NEGATIVE PROMPT: holding bottle, holding product, holding object, perfume bottle, cosmetic container.\n`;
+    }
+
+    // MODE SANS PERSONNAGE (Interdiction d'ajouter des personnes)
+    if (selectedPeople.length === 0 && !isPackshot) {
+      promptBuilder += `\nNO PEOPLE CONSTRAINT:\n`;
+      promptBuilder += `CRITICAL: Do NOT add any people, faces, hands, or human presence to the image.\n`;
+      promptBuilder += `The user has not selected any person - respect this choice.\n`;
+      promptBuilder += `NEGATIVE PROMPT: person, people, human, face, hands, portrait, model, man, woman, figure.\n`;
     }
 
     // Apprentissage des préférences
@@ -889,19 +956,27 @@ export const refinePrompt = async (
         contents: `You are a World-Class Prompt Engineer for AI Image Generators.
 
 INPUT (may be in French): "${roughIdea}"
-CONTEXT: ${context || 'General commercial photography'}
+
+CONTEXT ELEMENTS (MUST be integrated into the prompt):
+${context || 'General commercial photography'}
 
 TASK: Transform this into an optimized ENGLISH "Master Prompt" for photorealistic image generation.
 
+CRITICAL RULES:
+1. If a Person/Model is specified → They MUST be the main subject, described with details
+2. If a Product is specified → It MUST appear prominently in the scene
+3. If a Location/Background is specified → The scene MUST take place in this exact environment
+4. Combine all elements naturally into a cohesive commercial scene
+
 INCLUDE specific details for:
-• Subject positioning and expression
+• Subject positioning and expression (based on context)
 • Lighting setup (e.g., "three-point lighting with soft key light", "golden hour rim light")
 • Camera/lens specs (e.g., "Sony A7R IV, 85mm f/1.4, shallow DOF")
 • Art direction (e.g., "Vogue editorial aesthetic", "Apple product photography style")
-• Color grading and mood
+• Color grading and mood (matching the location if specified)
 • Technical quality keywords (8K, hyperrealistic, etc.)
 
-OUTPUT: A single dense paragraph in English. No explanations, just the prompt.`,
+OUTPUT: A single dense paragraph in English incorporating ALL context elements. No explanations, just the prompt.`,
       }),
       20000,
       'Prompt refinement'
@@ -979,3 +1054,106 @@ function getDefaultSuggestions(): string[] {
     "Mise en scène créative avec effets de glace et de froid"
   ];
 }
+
+// ============================================
+// CREATIVE ASSISTANT - CONCEPT GENERATOR
+// ============================================
+
+
+
+export const generateCreativeConcepts = async (
+  brief: string,
+  people: EntityProfile[],
+  products: EntityProfile[],
+  locations: EntityProfile[] = []
+): Promise<CreativeConcept[]> => {
+  const apiKey = getApiKey();
+  if (!apiKey) throw new Error("Clé API manquante");
+
+  const ai = new GoogleGenAI({ apiKey });
+
+  // Describe available assets
+  const peopleDesc = people.map((p, i) => `[PERSON_${i}]: ${p.name} - ${p.description || 'Model'}`).join('\n');
+  const productsDesc = products.map((p, i) => `[PRODUCT_${i}]: ${p.name} - ${p.type} - ${p.description || 'Product'}`).join('\n');
+  const locationDesc = locations.map((l, i) => `[LOCATION_${i}]: ${l.name} - ${l.description || 'Location'}`).join('\n');
+
+  const prompt = `You are a Creative Director for a high-end brand.
+  
+  BRIEF: "${brief}"
+
+  AVAILABLE ASSETS:
+  ${peopleDesc ? 'People:\n' + peopleDesc : 'No specific people available based on selection.'}
+  ${productsDesc ? 'Products:\n' + productsDesc : 'No specific products available based on selection.'}
+  ${locationDesc ? 'Locations:\n' + locationDesc : 'No specific locations available based on selection.'}
+
+  TASK:
+  Generate 3 distinct, creative, and actionable campaign concepts based on the brief.
+  Each concept must be suitable for generating a high-quality advertising image.
+  
+  For each concept:
+  1. Title: Catchy name (French).
+  2. Description: 1 sentence summary (French).
+  3. Suggested Prompt: A highly detailed image generation prompt (English) that captures the scene, lighting, mood, and composition. 
+  4. Rationale: Why this fits the brief (French).
+  5. Suggested Assets: Indices of the best Person/Product/Location to use from the provided list (if applicable).
+  `;
+
+  try {
+    const response = await callWithTimeout(
+      ai.models.generateContent({
+        model: 'gemini-1.5-flash',
+        contents: { parts: [{ text: prompt }] },
+        config: {
+          temperature: 0.8,
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                title: { type: Type.STRING },
+                description: { type: Type.STRING },
+                suggestedPrompt: { type: Type.STRING },
+                rationale: { type: Type.STRING },
+                suggestedAssetIndex: {
+                  type: Type.OBJECT,
+                  properties: {
+                    personIndex: { type: Type.INTEGER, nullable: true },
+                    productIndex: { type: Type.INTEGER, nullable: true },
+                    locationIndex: { type: Type.INTEGER, nullable: true }
+                  }
+                }
+              },
+              required: ['title', 'description', 'suggestedPrompt', 'rationale']
+            }
+          }
+        }
+      }),
+      15000,
+      'Génération de concepts'
+    );
+
+    const txt = response.text;
+    if (!txt) return [];
+
+    const parsed = JSON.parse(txt);
+
+    // Map indices back to IDs
+    return parsed.map((c: any, idx: number) => ({
+      ...c,
+      id: `concept-${Date.now()}-${idx}`,
+      suggestedAssets: {
+        personId: c.suggestedAssetIndex?.personIndex != null ? people[c.suggestedAssetIndex.personIndex]?.id : undefined,
+        productId: c.suggestedAssetIndex?.productIndex != null ? products[c.suggestedAssetIndex.productIndex]?.id : undefined,
+        locationId: c.suggestedAssetIndex?.locationIndex != null ? locations[c.suggestedAssetIndex.locationIndex]?.id : undefined
+      }
+    }));
+
+  } catch (error) {
+    console.warn("Concept generation failed", error);
+    return [];
+  }
+};
+
+
+

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { ImageUploader } from './ImageUploader';
-import { Button } from './Button';
+import { ImageUploader } from './common/ImageUploader';
+import { Button } from './common/Button';
 import { TrainingData } from '../types';
 import { analyzeImageForTraining } from '../services/geminiService';
 import { ArrowRight, CheckCircle, Camera, Package } from 'lucide-react';
@@ -26,14 +26,14 @@ export const TrainingWizard: React.FC<TrainingWizardProps> = ({ onComplete }) =>
     } else {
       // Finalize
       if (!data.productImages?.length || !data.productName) return;
-      
+
       setIsAnalyzing(true);
       try {
         // Analyze User
         const userDesc = await analyzeImageForTraining(data.userImages!, 'PERSON');
         // Analyze Product
         const prodDesc = await analyzeImageForTraining(data.productImages!, 'PRODUCT');
-        
+
         onComplete({
           userImages: data.userImages!,
           userDescription: userDesc,
@@ -82,7 +82,7 @@ export const TrainingWizard: React.FC<TrainingWizardProps> = ({ onComplete }) =>
               <input
                 type="text"
                 value={data.userName}
-                onChange={e => setData({...data, userName: e.target.value})}
+                onChange={e => setData({ ...data, userName: e.target.value })}
                 placeholder="ex: Alex"
                 className="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:ring-2 focus:ring-blue-500 outline-none"
               />
@@ -92,7 +92,7 @@ export const TrainingWizard: React.FC<TrainingWizardProps> = ({ onComplete }) =>
               label="Vos Photos"
               description="Téléchargez 1 à 20 photos claires. Plus il y en a, meilleure est la précision, mais une seule suffit pour commencer."
               images={data.userImages || []}
-              onImagesChange={imgs => setData({...data, userImages: imgs})}
+              onImagesChange={imgs => setData({ ...data, userImages: imgs })}
               maxImages={20}
               mode="PERSON"
             />
@@ -109,7 +109,7 @@ export const TrainingWizard: React.FC<TrainingWizardProps> = ({ onComplete }) =>
               <input
                 type="text"
                 value={data.productName}
-                onChange={e => setData({...data, productName: e.target.value})}
+                onChange={e => setData({ ...data, productName: e.target.value })}
                 placeholder="ex: Montre Chronos"
                 className="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:ring-2 focus:ring-blue-500 outline-none"
               />
@@ -119,7 +119,7 @@ export const TrainingWizard: React.FC<TrainingWizardProps> = ({ onComplete }) =>
               label="Photos du Produit"
               description="Téléchargez 1 à 20 photos sous différents angles."
               images={data.productImages || []}
-              onImagesChange={imgs => setData({...data, productImages: imgs})}
+              onImagesChange={imgs => setData({ ...data, productImages: imgs })}
               maxImages={20}
               mode="PRODUCT"
             />
@@ -127,7 +127,7 @@ export const TrainingWizard: React.FC<TrainingWizardProps> = ({ onComplete }) =>
         )}
 
         <div className="mt-8 pt-6 border-t border-gray-800 flex justify-end">
-          <Button 
+          <Button
             onClick={handleNext}
             isLoading={isAnalyzing}
             disabled={(step === 1 && (!data.userName || !data.userImages?.length)) || (step === 2 && (!data.productName || !data.productImages?.length))}
@@ -137,7 +137,7 @@ export const TrainingWizard: React.FC<TrainingWizardProps> = ({ onComplete }) =>
           </Button>
         </div>
       </div>
-      
+
       {isAnalyzing && (
         <div className="text-center mt-4 text-gray-400 text-sm animate-pulse">
           Gemini analyse les caractéristiques et construit les modèles visuels...

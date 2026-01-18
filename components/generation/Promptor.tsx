@@ -1,15 +1,16 @@
 import React, { useState } from 'react';
-import { refinePrompt } from '../services/geminiService';
+import { refinePrompt } from '../../services/geminiService';
 import { Wand2, ArrowRight, Copy, Sparkles } from 'lucide-react';
-import { Button } from './Button';
+import { Button } from '../common/Button';
 
 interface PromptorProps {
   onUsePrompt: (prompt: string) => void;
   contextUser?: string;
   contextProduct?: string;
+  contextLocation?: string; // NEW: Location/background context
 }
 
-export const Promptor: React.FC<PromptorProps> = ({ onUsePrompt, contextUser, contextProduct }) => {
+export const Promptor: React.FC<PromptorProps> = ({ onUsePrompt, contextUser, contextProduct, contextLocation }) => {
   const [input, setInput] = useState('');
   const [refined, setRefined] = useState('');
   const [loading, setLoading] = useState(false);
@@ -17,8 +18,17 @@ export const Promptor: React.FC<PromptorProps> = ({ onUsePrompt, contextUser, co
   const handleRefine = async () => {
     if (!input.trim()) return;
     setLoading(true);
-    // Pass context about who/what is in the photo to get better results
-    const context = `Subject: ${contextUser || 'A person'} ${contextProduct ? `and ${contextProduct}` : ''}.`;
+
+    // Build comprehensive context with all selected elements
+    let contextParts: string[] = [];
+    if (contextUser) contextParts.push(`Person/Model: ${contextUser}`);
+    if (contextProduct) contextParts.push(`Product: ${contextProduct}`);
+    if (contextLocation) contextParts.push(`Location/Background: ${contextLocation}`);
+
+    const context = contextParts.length > 0
+      ? contextParts.join('. ')
+      : 'General commercial photography';
+
     const result = await refinePrompt(input, context);
     setRefined(result);
     setLoading(false);
@@ -33,7 +43,7 @@ export const Promptor: React.FC<PromptorProps> = ({ onUsePrompt, contextUser, co
       <p className="text-xs text-gray-400">
         Transformez vos idées simples en "Master Prompts" professionnels avec un éclairage détaillé, des réglages caméra et une direction artistique.
       </p>
-      
+
       <div className="flex gap-2">
         <input
           type="text"
@@ -51,11 +61,11 @@ export const Promptor: React.FC<PromptorProps> = ({ onUsePrompt, contextUser, co
       {refined && (
         <div className="bg-gray-800/50 rounded-lg p-3 animate-fade-in border border-blue-500/30">
           <div className="max-h-32 overflow-y-auto custom-scrollbar mb-3">
-             <p className="text-xs text-gray-300 leading-relaxed">"{refined}"</p>
+            <p className="text-xs text-gray-300 leading-relaxed">"{refined}"</p>
           </div>
-          <Button 
-            onClick={() => onUsePrompt(refined)} 
-            variant="primary" 
+          <Button
+            onClick={() => onUsePrompt(refined)}
+            variant="primary"
             className="w-full text-xs py-2 h-auto"
           >
             Utiliser ce Master Prompt

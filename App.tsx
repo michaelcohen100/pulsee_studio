@@ -12,6 +12,7 @@ const App: React.FC = () => {
   const [state, setState] = useState<AppState>({
     people: [],
     products: [],
+    locations: [],
     gallery: [],
     likedPrompts: []
   });
@@ -27,10 +28,12 @@ const App: React.FC = () => {
 
         const people = profiles.filter((p: any) => p.type === 'PERSON');
         const products = profiles.filter((p: any) => p.type === 'PRODUCT');
+        const locations = profiles.filter((p: any) => p.type === 'LOCATION');
 
         setState({
           people,
           products,
+          locations,
           gallery,
           likedPrompts: []
         });
@@ -106,6 +109,23 @@ const App: React.FC = () => {
     setState(prev => ({
       ...prev,
       products: newProductList
+    }));
+  };
+
+  const handleUpdateLocations = async (newLocationList: EntityProfile[]) => {
+    // 1. Determine deletions
+    const deleted = state.locations.filter(l => !newLocationList.find(newL => newL.id === l.id));
+
+    // 2. Perform DB operations
+    await Promise.all([
+      ...deleted.map(d => db.deleteProfile(d.id)),
+      ...newLocationList.map(l => db.saveProfile(l))
+    ]);
+
+    // 3. Update UI State
+    setState(prev => ({
+      ...prev,
+      locations: newLocationList
     }));
   };
 
@@ -225,8 +245,10 @@ const App: React.FC = () => {
           <Studio
             people={state.people}
             products={state.products}
+            locations={state.locations}
             onUpdatePeople={handleUpdatePeople}
             onUpdateProducts={handleUpdateProducts}
+            onUpdateLocations={handleUpdateLocations}
             onOpenAICreator={() => setView(AppStep.AI_CREATOR)}
           />
         )}
